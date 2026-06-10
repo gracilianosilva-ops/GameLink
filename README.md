@@ -1,4 +1,5 @@
 **Visão Geral**
+
    O GameLink é uma rede social dedicada à comunidade de jogadores, focada no compartilhamento de experiências, mídias e construção de perfis focados em histórico de jogo. 
    A plataforma permite que os utilizadores registrem as experiências dos seus jogos favoritos e interajam com outros jogadores com interesses semelhantes.
 
