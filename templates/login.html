@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-4 card text-dark p-4 mt-5">
+        <h3 class="text-center mb-4">Login</h3>
+        <form method="POST">
+            <div class="mb-3">
+                <label>E-mail</label>
+                <input type="email" name="email" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label>Senha</label>
+                <input type="password" name="senha" class="form-control" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Entrar</button>
+        </form>
+        <div class="text-center mt-3">
+            <a href="{{ url_for('cadastro') }}">Criar Conta</a> | <a href="{{ url_for('recuperar') }}">Esqueci a Senha</a>
+        </div>
+        <hr>
+        <small class="text-muted">Dica de professor: Entre com <strong>admin@gamelink.com</strong> e senha <strong>admin123</strong> para simular o CRUD de gerenciamento de jogos!</small>
+    </div>
+</div>
+{% endblock %}
