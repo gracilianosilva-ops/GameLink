@@ -12,6 +12,9 @@ class Usuario(EntidadeBase):
         self.email = email
         self.__password = password  # Atributo privado
         self.token_recuperacao = None
+        self.idade = None
+        self.gosto_jogos = ""  # Descrição dos gostos
+        self.telefone = ""
 
     # Getter e Setter para controle de visibilidade da senha com validação
     def verificar_senha(self, password: str) -> bool:

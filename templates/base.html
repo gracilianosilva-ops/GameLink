@@ -8,9 +8,11 @@
 <body class="bg-dark text-white">
     <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand fw-bold text-primary" href="#">🎮 GameLink</a>
+            <a class="navbar-brand fw-bold text-primary" href="{{ url_for('dashboard') }}">🎮 GameLink</a>
             {% if session.get('user_email') %}
                 <span class="navbar-text me-3">Olá, {{ session['user_nome'] }} {% if session['is_admin'] %}(Admin){% endif %}</span>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm me-2">🏠 Página Inicial</a>
+                <a href="{{ url_for('perfil', email=session['user_email']) }}" class="btn btn-outline-primary btn-sm me-2">Meu Perfil</a>
                 <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">Sair</a>
             {% endif %}
         </div>
