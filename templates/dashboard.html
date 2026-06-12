@@ -2,87 +2,317 @@
 {% block content %}
 <div class="row">
     <div class="col-md-12 mb-4">
-        <form action="{{ url_for('busca') }}" method="GET" class="row g-2">
-            <div class="col-md-6">
-                <input type="text" name="termo" class="form-control" placeholder="Buscar no GameLink..." value="{{ busca_termo or '' }}">
-            </div>
-            <div class="col-md-3">
-                <select name="filtro" class="form-select">
-                    <option value="titulo">Por Título</option>
-                    <option value="genero">Por Gênero</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-primary w-100">Pesquisar</button>
-            </div>
-        </form>
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link active" id="abajogos-tab" data-bs-toggle="tab" href="#abajogos" role="tab">🎮 Jogos</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="abaposts-tab" data-bs-toggle="tab" href="#abaposts" role="tab">📝 Posts da Comunidade</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="ababiblioteca-tab" data-bs-toggle="tab" href="#ababiblioteca" role="tab">📚 Minha Biblioteca</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="abanotificacoes-tab" data-bs-toggle="tab" href="#abanotificacoes" role="tab">
+                    🔔 Notificações
+                    {% if notif_nao_lidas > 0 %}<span class="badge bg-danger">{{ notif_nao_lidas }}</span>{% endif %}
+                </a>
+            </li>
+        </ul>
     </div>
 
-    <div class="col-md-8">
-        <h3>Catálogo de Jogos</h3>
-        <div class="list-group">
-            {% for jogo_id, jogo in jogos.items() %}
-                <div class="list-group-item bg-secondary text-white mb-2 d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5>{{ jogo.titulo }}</h5>
-                        <small>Gênero: {{ jogo.genero }} | Dev: {{ jogo.desenvolvedora }} ({{ jogo.ano }})</small>
-                        <br>
-                        <span class="badge bg-info mt-1">Tags: {{ ", ".join(jogo.listar_categorias()) }}</span>
-                    </div>
-                    {% if session.get('is_admin') %}
-                        <a href="{{ url_for('deletar_jogo', id=jogo.id) }}" class="btn btn-danger btn-sm">Excluir</a>
-                    {% endif %}
+    <!-- Aba de Jogos -->
+    <div class="tab-content col-md-12">
+        <div class="tab-pane fade show active" id="abajogos" role="tabpanel">
+            <div class="row">
+                <div class="col-md-12 mb-4">
+                    <form action="{{ url_for('busca') }}" method="GET" class="row g-2">
+                        <div class="col-md-6">
+                            <input type="text" name="termo" class="form-control" placeholder="Buscar no GameLink..." value="{{ busca_termo or '' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <select name="filtro" class="form-select">
+                                <option value="titulo">Por Título</option>
+                                <option value="genero">Por Gênero</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary w-100">Pesquisar</button>
+                        </div>
+                    </form>
                 </div>
-            {% else %}
-                <p>Nenhum jogo encontrado.</p>
-            {% endfor %}
-        </div>
-    </div>
 
-    <div class="col-md-4">
-        {% if session.get('is_admin') %}
-            <div class="card text-dark p-3">
-                <h5>[Painel Admin] Cadastrar Jogo</h5>
-                <form action="{{ url_for('novo_jogo') }}" method="POST">
-                    <div class="mb-2"><label>Título</label><input type="text" name="titulo" class="form-control form-control-sm" required></div>
-                    <div class="mb-2"><label>Gênero</label><input type="text" name="genero" class="form-control form-control-sm" required></div>
-                    <div class="mb-2"><label>Desenvolvedora</label><input type="text" name="desenvolvedora" class="form-control form-control-sm" required></div>
-                    <div class="mb-2"><label>Ano</label><input type="number" name="ano" class="form-control form-control-sm" required></div>
-                    <button type="submit" class="btn btn-success btn-sm w-100">Salvar Jogo</button>
-                </form>
-            </div>
-        {% else %}
-            <div class="alert alert-info">
-                Você está logado como usuário comum. Para testar o cadastro de novos jogos, logue na conta de Administrador.
-            </div>
-        {% endif %}
-
-        <!-- Seção de Usuários -->
-        <div class="card mt-4 text-dark">
-            <div class="card-header bg-warning">
-                <h5>Usuários no GameLink</h5>
-            </div>
-            <div class="card-body">
-                {% if usuarios %}
+                <div class="col-md-8">
+                    <h3>Catálogo de Jogos</h3>
                     <div class="list-group">
-                        {% for email, user in usuarios.items() %}
-                            {% if email != session.get('user_email') %}
-                                <a href="{{ url_for('perfil', email=email) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <strong>{{ user.nome }}</strong>
-                                        <br>
-                                        <small class="text-muted">{{ email }}</small>
-                                    </div>
-                                    <span class="badge bg-primary">Ver Perfil</span>
-                                </a>
-                            {% endif %}
+                        {% for jogo_id, jogo in jogos.items() %}
+                            <div class="list-group-item bg-secondary text-white mb-2 d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5>{{ jogo.titulo }}</h5>
+                                    <small>Gênero: {{ jogo.genero }} | Dev: {{ jogo.desenvolvedora }} ({{ jogo.ano }})</small>
+                                    <br>
+                                    <span class="badge bg-info mt-1">Tags: {{ ", ".join(jogo.listar_categorias()) }}</span>
+                                </div>
+                                <div class="btn-group" role="group">
+                                    {% if session.get('is_admin') %}
+                                        <a href="{{ url_for('deletar_jogo', id=jogo.id) }}" class="btn btn-danger btn-sm">Excluir</a>
+                                    {% endif %}
+                                    <a href="{{ url_for('adicionar_biblioteca', jogo_id=jogo.id) }}" class="btn btn-success btn-sm">📚 Adicionar à Biblioteca</a>
+                                </div>
+                            </div>
+                        {% else %}
+                            <p>Nenhum jogo encontrado.</p>
                         {% endfor %}
                     </div>
-                {% else %}
-                    <p class="text-muted">Nenhum outro usuário disponível.</p>
-                {% endif %}
+                </div>
+
+                <div class="col-md-4">
+                    {% if session.get('is_admin') %}
+                        <div class="card text-dark p-3">
+                            <h5>[Painel Admin] Cadastrar Jogo</h5>
+                            <form action="{{ url_for('novo_jogo') }}" method="POST">
+                                <div class="mb-2"><label>Título</label><input type="text" name="titulo" class="form-control form-control-sm" required></div>
+                                <div class="mb-2"><label>Gênero</label><input type="text" name="genero" class="form-control form-control-sm" required></div>
+                                <div class="mb-2"><label>Desenvolvedora</label><input type="text" name="desenvolvedora" class="form-control form-control-sm" required></div>
+                                <div class="mb-2"><label>Ano</label><input type="number" name="ano" class="form-control form-control-sm" required></div>
+                                <button type="submit" class="btn btn-success btn-sm w-100">Salvar Jogo</button>
+                            </form>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            Você está logado como usuário comum. Para testar o cadastro de novos jogos, logue na conta de Administrador.
+                        </div>
+                    {% endif %}
+
+                    <!-- Seção de Usuários -->
+                    <div class="card mt-4 text-dark">
+                        <div class="card-header bg-warning">
+                            <h5>Usuários no GameLink</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if usuarios %}
+                                <div class="list-group">
+                                    {% for email, user in usuarios.items() %}
+                                        {% if email != session.get('user_email') %}
+                                            <a href="{{ url_for('perfil', email=email) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <strong>{{ user.nome }}</strong>
+                                                    <br>
+                                                    <small class="text-muted">{{ email }}</small>
+                                                </div>
+                                                <span class="badge bg-primary">Ver Perfil</span>
+                                            </a>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-muted">Nenhum outro usuário disponível.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Aba de Posts -->
+        <div class="tab-pane fade" id="abaposts" role="tabpanel">
+            <div class="row">
+                <div class="col-md-8">
+                    <h3>📝 Posts da Comunidade</h3>
+                    
+                    <!-- Formulário para criar novo post -->
+                    <div class="card text-dark mb-4 p-3">
+                        <h5>Criar um novo post</h5>
+                        <form action="{{ url_for('novo_post') }}" method="POST" enctype="multipart/form-data">
+                            <div class="mb-2">
+                                <label class="form-label">Título</label>
+                                <input type="text" name="titulo" class="form-control" placeholder="Título do seu post..." required>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Conteúdo</label>
+                                <textarea name="conteudo" class="form-control" rows="3" placeholder="Escreva seu post aqui..." required></textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">📷 Imagem (opcional)</label>
+                                <input type="file" name="imagem" class="form-control" accept="image/png,image/jpeg,image/gif,image/webp">
+                                <small class="text-muted">Formatos permitidos: PNG, JPG, JPEG, GIF, WEBP (Máximo 5MB)</small>
+                            </div>
+                            <button type="submit" class="btn btn-success">Publicar Post</button>
+                        </form>
+                    </div>
+
+                    <!-- Lista de posts -->
+                    <div class="list-group">
+                        {% for post_id, post in posts.items() %}
+                            <div class="list-group-item bg-dark border border-light mb-2 p-3">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div style="flex: 1;">
+                                        {% if post.imagem_url %}
+                                            <img src="{{ post.imagem_url }}" alt="Imagem do post" class="img-fluid rounded mb-2" style="max-height: 300px; object-fit: cover; width: 100%;">
+                                        {% endif %}
+                                        <h5 class="text-light">{{ post.titulo }}</h5>
+                                        <p class="text-muted mb-2">
+                                            Publicado por <strong>{{ usuarios.get(post.autor_email, {}).nome or post.autor_email }}</strong>
+                                            em {{ post.data_criacao.strftime('%d/%m/%Y %H:%M') }}
+                                        </p>
+                                        <p class="text-light mb-3">{{ post.conteudo[:150] }}{% if post.conteudo|length > 150 %}...{% endif %}</p>
+                                        
+                                        <!-- Botões de ação -->
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <a href="{{ url_for('ver_post', post_id=post.id) }}" class="btn btn-outline-primary">Ver Post Completo</a>
+                                            
+                                            {% if post.usuario_curtiu(session.get('user_email')) %}
+                                                <button type="button" class="btn btn-outline-danger curtir-btn" data-post-id="{{ post.id }}" onclick="curtirPost({{ post.id }}, this)">
+                                                    ❤️ {{ post.get_total_curtidas() }} Curtidas
+                                                </button>
+                                            {% else %}
+                                                <button type="button" class="btn btn-outline-light curtir-btn" data-post-id="{{ post.id }}" onclick="curtirPost({{ post.id }}, this)">
+                                                    🤍 {{ post.get_total_curtidas() }} Curtidas
+                                                </button>
+                                            {% endif %}
+
+                                            <a href="{{ url_for('ver_post', post_id=post.id) }}" class="btn btn-outline-info">
+                                                💬 {{ post.comentarios_ids|length }} Comentários
+                                            </a>
+                                            
+                                            {% if session.get('user_email') == post.autor_email or session.get('is_admin') %}
+                                                <form action="{{ url_for('deletar_post', post_id=post.id) }}" method="POST" style="display:inline;">
+                                                    <button type="submit" class="btn btn-outline-danger btn-sm">🗑️ Deletar</button>
+                                                </form>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% else %}
+                            <p class="text-light">Nenhum post ainda. Seja o primeiro a criar um!</p>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card text-dark">
+                        <div class="card-header bg-info">
+                            <h5>📊 Estatísticas de Posts</h5>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Total de Posts:</strong> {{ posts|length }}</p>
+                            <p><strong>Seus Posts:</strong> {{ posts.values()|selectattr('autor_email', 'equalto', session.get('user_email'))|list|length }}</p>
+                            <hr>
+                            <p class="text-muted"><small>ℹ️ Compartilhe suas experiências de gaming e participe da comunidade!</small></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Aba de Biblioteca Pessoal -->
+        <div class="tab-pane fade" id="ababiblioteca" role="tabpanel">
+            <div class="row">
+                <div class="col-md-8">
+                    <h3>📚 Minha Biblioteca Pessoal</h3>
+                    <p class="text-muted">Adicione jogos à sua biblioteca e faça avaliações!</p>
+                    
+                    <div class="row" id="biblioteca-items">
+                        <!-- Itens da biblioteca carregarão aqui dinamicamente -->
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card text-dark">
+                        <div class="card-header bg-success">
+                            <h5>📊 Estatísticas da Biblioteca</h5>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Total de Jogos:</strong> <span id="total-biblioteca">0</span></p>
+                            <p><strong>Jogos Concluídos:</strong> <span id="concluidos-biblioteca">0</span></p>
+                            <p><strong>Platinados:</strong> <span id="platinados-biblioteca">0</span></p>
+                            <hr>
+                            <p class="text-muted"><small>ℹ️ Gerencie sua coleção de jogos e compartilhe suas avaliações!</small></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Aba de Notificações -->
+        <div class="tab-pane fade" id="abanotificacoes" role="tabpanel">
+            <div class="row">
+                <div class="col-md-8">
+                    <h3>🔔 Suas Notificações</h3>
+                    
+                    <div class="list-group" id="notificacoes-list">
+                        <!-- Notificações carregarão aqui -->
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card text-dark">
+                        <div class="card-header bg-warning">
+                            <h5>📢 Centro de Notificações</h5>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Não Lidas:</strong> <span id="nao-lidas-count" class="badge bg-danger">{{ notif_nao_lidas }}</span></p>
+                            <p class="text-muted"><small>Você receberá notificações quando:</small></p>
+                            <ul class="text-muted" style="font-size: 0.9em;">
+                                <li>Amigos criarem novos posts</li>
+                                <li>Receberem solicitações de amizade</li>
+                                <li>Novos jogos forem adicionados</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    function curtirPost(postId, button) {
+        fetch(`/posts/${postId}/curtir`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(response => response.json()).then(data => {
+            if (data.curtiu) {
+                button.classList.remove('btn-outline-light');
+                button.classList.add('btn-outline-danger');
+                button.innerHTML = `❤️ ${data.total_curtidas} Curtidas`;
+            } else {
+                button.classList.remove('btn-outline-danger');
+                button.classList.add('btn-outline-light');
+                button.innerHTML = `🤍 ${data.total_curtidas} Curtidas`;
+            }
+        });
+    }
+
+    // Carregar biblioteca quando a aba for ativada
+    document.getElementById('ababiblioteca-tab').addEventListener('click', function() {
+        fetch('/biblioteca')
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const content = doc.querySelector('[data-biblioteca-content]');
+                if (content) {
+                    document.getElementById('biblioteca-items').innerHTML = content.innerHTML;
+                }
+            });
+    });
+
+    // Carregar notificações quando a aba for ativada
+    document.getElementById('abanotificacoes-tab').addEventListener('click', function() {
+        fetch('/notificacoes')
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const content = doc.querySelector('[data-notificacoes-content]');
+                if (content) {
+                    document.getElementById('notificacoes-list').innerHTML = content.innerHTML;
+                }
+            });
+    });
+</script>
 {% endblock %}

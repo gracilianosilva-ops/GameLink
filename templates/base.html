@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>GameLink - Rede Social</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 <body class="bg-dark text-white">
     <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
@@ -13,6 +14,10 @@
                 <span class="navbar-text me-3">Olá, {{ session['user_nome'] }} {% if session['is_admin'] %}(Admin){% endif %}</span>
                 <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm me-2">🏠 Página Inicial</a>
                 <a href="{{ url_for('perfil', email=session['user_email']) }}" class="btn btn-outline-primary btn-sm me-2">Meu Perfil</a>
+                <a href="{{ url_for('notificacoes') }}" class="btn btn-outline-info btn-sm me-2">🔔 Notificações</a>
+                {% if session['is_admin'] %}
+                    <a href="{{ url_for('painel_moderacao_posts') }}" class="btn btn-outline-warning btn-sm me-2">⚙️ Moderação</a>
+                {% endif %}
                 <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">Sair</a>
             {% endif %}
         </div>

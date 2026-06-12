@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <!-- Post Completo -->
+        <div class="card bg-dark border border-light p-4 mb-4">
+            <div class="card-body">
+                <h1 class="text-light mb-3">{{ post.titulo }}</h1>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <p class="text-muted mb-0">
+                            Publicado por <strong class="text-info">{{ autor.nome if autor else post.autor_email }}</strong>
+                        </p>
+                        <small class="text-muted">{{ post.data_criacao.strftime('%d/%m/%Y às %H:%M') }}</small>
+                    </div>
+                    <div>
+                        {% if session.get('user_email') == post.autor_email or session.get('is_admin') %}
+                            <form action="{{ url_for('deletar_post', post_id=post.id) }}" method="POST" style="display:inline;">
+                                <button type="submit" class="btn btn-outline-danger btn-sm">🗑️ Deletar Post</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </div>
+                <hr>
+                {% if post.imagem_url %}
+                    <img src="{{ post.imagem_url }}" alt="Imagem do post" class="img-fluid rounded mb-3" style="max-height: 500px; object-fit: cover; width: 100%;">
+                {% endif %}
+                <p class="text-light lead">{{ post.conteudo }}</p>
+                <hr>
+                
+                <!-- Botões de Interação -->
+                <div class="btn-group btn-group-lg mb-4" role="group">
+                    {% if post.usuario_curtiu(session.get('user_email')) %}
+                        <button type="button" class="btn btn-danger curtir-btn" data-post-id="{{ post.id }}" onclick="curtirPost({{ post.id }}, this)">
+                            ❤️ {{ post.get_total_curtidas() }} Curtidas
+                        </button>
+                    {% else %}
+                        <button type="button" class="btn btn-outline-light curtir-btn" data-post-id="{{ post.id }}" onclick="curtirPost({{ post.id }}, this)">
+                            🤍 {{ post.get_total_curtidas() }} Curtidas
+                        </button>
+                    {% endif %}
+                    <button class="btn btn-outline-info" disabled>💬 {{ comentarios|length }} Comentários</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seção de Comentários -->
+        <div class="card bg-dark border border-light p-4 mb-4">
+            <h4 class="text-light mb-3">💬 Comentários ({{ comentarios|length }})</h4>
+            
+            <!-- Formulário para novo comentário -->
+            {% if session.get('user_email') %}
+                <form action="{{ url_for('comentar_post', post_id=post.id) }}" method="POST" class="mb-4">
+                    <div class="mb-2">
+                        <label class="form-label text-light">Deixe um comentário</label>
+                        <textarea name="texto" class="form-control" rows="2" placeholder="Escreva seu comentário..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Comentar</button>
+                </form>
+            {% else %}
+                <div class="alert alert-info mb-4">
+                    Faça <a href="{{ url_for('login') }}" class="alert-link">login</a> para comentar neste post.
+                </div>
+            {% endif %}
+
+            <hr>
+
+            <!-- Lista de comentários -->
+            {% if comentarios %}
+                <div class="list-group list-group-flush">
+                    {% for comentario in comentarios %}
+                        <div class="list-group-item bg-dark border border-secondary mb-2 p-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div style="flex: 1;">
+                                    <h6 class="text-info">
+                                        {{ usuarios.get(comentario.autor_email, {}).nome or comentario.autor_email }}
+                                        <small class="text-muted">{{ comentario.data_criacao.strftime('%d/%m/%Y %H:%M') }}</small>
+                                    </h6>
+                                    <p class="text-light mb-2">{{ comentario.texto }}</p>
+                                    
+                                    {% if session.get('user_email') == comentario.autor_email or session.get('is_admin') %}
+                                        <form action="{{ url_for('deletar_comentario_post', comentario_id=comentario.id) }}" method="POST" style="display:inline;">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">Deletar</button>
+                                        </form>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-muted text-center py-4">Nenhum comentário ainda. Seja o primeiro a comentar!</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-md-4">
+        <div class="card bg-dark border border-light mb-4">
+            <div class="card-header bg-info">
+                <h5 class="text-dark mb-0">📊 Informações do Post</h5>
+            </div>
+            <div class="card-body text-light">
+                <p><strong>Autor:</strong> {{ autor.nome if autor else post.autor_email }}</p>
+                <p><strong>Curtidas:</strong> {{ post.get_total_curtidas() }}</p>
+                <p><strong>Comentários:</strong> {{ comentarios|length }}</p>
+                <p><strong>Data:</strong> {{ post.data_criacao.strftime('%d/%m/%Y') }}</p>
+            </div>
+        </div>
+
+        <div class="card bg-dark border border-light">
+            <div class="card-header bg-warning">
+                <h5 class="text-dark mb-0">🔒 Moderação de Conteúdo</h5>
+            </div>
+            <div class="card-body text-light">
+                <p><small>Este post foi verificado pelo sistema de moderação de conteúdo. Conteúdos ofensivos, discriminatórios ou impróprios são bloqueados.</small></p>
+                {% if session.get('is_admin') %}
+                    <hr>
+                    <p><strong>Status:</strong> <span class="badge bg-success">Aprovado</span></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function curtirPost(postId, button) {
+        fetch(`/posts/${postId}/curtir`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(response => response.json()).then(data => {
+            if (data.curtiu) {
+                button.classList.remove('btn-outline-light');
+                button.classList.add('btn-danger');
+                button.innerHTML = `❤️ ${data.total_curtidas} Curtidas`;
+            } else {
+                button.classList.remove('btn-danger');
+                button.classList.add('btn-outline-light');
+                button.innerHTML = `🤍 ${data.total_curtidas} Curtidas`;
+            }
+        });
+    }
+</script>
+{% endblock %}

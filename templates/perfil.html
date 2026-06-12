@@ -37,18 +37,11 @@
 
             <hr>
 
+            <!-- Seção de Reviews -->
             <div class="mb-3">
-                <h5>📚 Biblioteca de Jogos</h5>
-                <div class="list-group mt-2">
-                    {% set jogos_usuario = [] %}
-                    {% for jogo_id, jogo in jogos.items() %}
-                        <div class="list-group-item bg-dark text-white mb-2">
-                            <h6>{{ jogo.titulo }}</h6>
-                            <small>Gênero: {{ jogo.genero }} | Dev: {{ jogo.desenvolvedora }} ({{ jogo.ano }})</small>
-                        </div>
-                    {% else %}
-                        <p><em>Nenhum jogo na biblioteca</em></p>
-                    {% endfor %}
+                <h5>⭐ Avaliações (Reviews)</h5>
+                <div id="reviews-section" class="mt-2">
+                    <p class="text-muted">Carregando reviews...</p>
                 </div>
             </div>
 
@@ -96,6 +89,53 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- Widget de Ações -->
+        {% if session.get('user_email') == usuario.email %}
+            <div class="card bg-info text-white p-3 mt-3">
+                <h5>📚 Minha Biblioteca</h5>
+                <p class="text-muted">Adicione jogos à sua biblioteca e avalie-os!</p>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-light btn-sm w-100">Ver Biblioteca</a>
+            </div>
+        {% endif %}
     </div>
 </div>
+
+<script>
+    // Carregar reviews do usuário
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('/api/reviews/usuario/{{ usuario.email }}')
+            .then(response => response.json())
+            .then(data => {
+                const section = document.getElementById('reviews-section');
+                if (data.reviews && data.reviews.length > 0) {
+                    let html = '<div class="list-group">';
+                    data.reviews.forEach(review => {
+                        html += `
+                            <div class="list-group-item bg-dark border-light mb-2 p-3">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div style="flex: 1;">
+                                        <h6 class="text-light">${review.titulo}</h6>
+                                        <p class="text-muted mb-2">${review.conteudo}</p>
+                                        <div>
+                                            <span class="badge bg-warning text-dark">⭐ ${review.nota}/10</span>
+                                            <small class="text-muted ms-2">${review.jogo_titulo}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    section.innerHTML = html;
+                } else {
+                    section.innerHTML = '<p><em>Nenhuma avaliação ainda</em></p>';
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao carregar reviews:', error);
+                document.getElementById('reviews-section').innerHTML = '<p class="text-danger">Erro ao carregar reviews</p>';
+            });
+    });
+</script>
 {% endblock %}
