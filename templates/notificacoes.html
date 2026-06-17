@@ -1,78 +1,10 @@
-{% if request.path == '/notificacoes' %}
-    {% extends 'base.html' %}
-    {% block content %}
-    <div class="container mt-5">
-        <h1>🔔 Suas Notificações</h1>
-        <p class="text-muted">Acompanhe atividades de amigos e novidades</p>
-{% endif %}
+{% extends 'base.html' %}
 
-<div data-notificacoes-content>
-    {% if notificacoes %}
-        <div class="list-group">
-            {% for notif in notificacoes %}
-                <div class="list-group-item list-group-item-action bg-dark border-light mb-2 p-3">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div style="flex: 1;">
-                            <!-- Indicador de lida -->
-                            {% if not notif.lida %}
-                                <span class="badge bg-primary float-end ms-2">Novo</span>
-                            {% endif %}
-
-                            <!-- Ícone e tipo -->
-                            <h6 class="text-light">
-                                {% if notif.tipo == 'amigo_post' %}
-                                    📝 {{ notif.titulo }}
-                                {% elif notif.tipo == 'amizade' %}
-                                    👥 {{ notif.titulo }}
-                                {% elif notif.tipo == 'novo_jogo' %}
-                                    🎮 {{ notif.titulo }}
-                                {% else %}
-                                    📢 {{ notif.titulo }}
-                                {% endif %}
-                            </h6>
-
-                            <!-- Descrição -->
-                            <p class="text-muted mb-2">{{ notif.descricao }}</p>
-
-                            <!-- Data -->
-                            <small class="text-muted">
-                                {{ notif.data_criacao.strftime('%d/%m/%Y %H:%M') }}
-                            </small>
-
-                            <!-- Botão de ação -->
-                            {% if notif.link %}
-                                <a href="{{ notif.link }}" class="btn btn-sm btn-outline-primary ms-2">Ir para</a>
-                            {% endif %}
-                            {% if not notif.lida %}
-                                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="marcarComoLida({{ notif.id }})">Marcar como lida</button>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="alert alert-info" role="alert">
-            <h5>🔔 Nenhuma notificação!</h5>
-            <p>Você está em dia com suas notificações. Quando amigos postarem ou enviarem solicitações de amizade, você receberá notificações aqui.</p>
-        </div>
-    {% endif %}
+{% block content %}
+<div class="container mt-5">
+    <h1>🔔 Suas Notificações</h1>
+    <p class="text-muted">Acompanhe atividades de amigos e novidades</p>
+    
+    {% include '_notificacoes_conteudo.html' %}
 </div>
-
-{% if request.path == '/notificacoes' %}
-    <script>
-        function marcarComoLida(notifId) {
-            fetch(`/notificacao/${notifId}/marcar-lida`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            }).then(response => {
-                if (response.ok) {
-                    location.reload();
-                }
-            });
-        }
-    </script>
-    {% endblock %}
-{% endif %}
+{% endblock %}

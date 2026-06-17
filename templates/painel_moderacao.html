@@ -4,39 +4,37 @@
     <div class="col-md-12">
         <h2 class="text-light mb-4">🔐 Painel de Moderação</h2>
         
-        <!-- Abas de Moderação -->
         <ul class="nav nav-tabs mb-4" role="tablist">
-            <li class="nav-item">
-                <a class="nav-link active" id="posts-tab" data-bs-toggle="tab" href="#posts" role="tab">📝 Posts Ocultos</a>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="posts-tab" data-bs-toggle="tab" data-bs-target="#posts" type="button" role="tab" aria-controls="posts" aria-selected="true">📝 Posts Ocultos</button>
             </li>
-            <li class="nav-item">
-                <a class="nav-link" id="comentarios-tab" data-bs-toggle="tab" href="#comentarios" role="tab">💬 Comentários Ocultos</a>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="comentarios-tab" data-bs-toggle="tab" data-bs-target="#comentarios" type="button" role="tab" aria-controls="comentarios" aria-selected="false">💬 Comentários Ocultos</button>
             </li>
         </ul>
 
         <div class="tab-content">
-            <!-- Posts Ocultos -->
-            <div class="tab-pane fade show active" id="posts" role="tabpanel">
+            <div class="tab-pane fade show active" id="posts" role="tabpanel" aria-labelledby="posts-tab">
                 <h4 class="text-light mb-3">Posts Ocultos por Moderação</h4>
                 
                 {% if posts_ocultos %}
                     <div class="list-group">
                         {% for post_id, post in posts_ocultos.items() %}
-                            <div class="list-group-item bg-secondary p-3 mb-2">
+                            <div class="list-group-item bg-secondary p-3 mb-2 border-0 rounded">
                                 <div class="row align-items-center">
                                     <div class="col-md-8">
                                         <h5 class="text-light">{{ post.titulo }}</h5>
-                                        <p class="text-muted mb-1">
+                                        <p class="text-white-50 small mb-1">
                                             <strong>Autor:</strong> {{ usuarios.get(post.autor_email, {}).nome or post.autor_email }}
                                         </p>
-                                        <p class="text-muted mb-2">
+                                        <p class="text-white-50 small mb-2">
                                             <strong>Data:</strong> {{ post.data_criacao.strftime('%d/%m/%Y %H:%M') }}
                                         </p>
-                                        <p class="text-light">{{ post.conteudo[:200] }}...</p>
+                                        <p class="text-light">{{ post.conteudo[:200] }}{% if post.conteudo|length > 200 %}...{% endif %}</p>
                                         
-                                        <div class="badge bg-warning text-dark">⚠️ Conteúdo Bloqueado</div>
+                                        <span class="badge bg-warning text-dark">⚠️ Conteúdo Bloqueado</span>
                                     </div>
-                                    <div class="col-md-4 text-center">
+                                    <div class="col-md-4 text-md-end text-center mt-3 mt-md-0">
                                         <form action="{{ url_for('restaurar_post', post_id=post.id) }}" method="POST">
                                             <button type="submit" class="btn btn-success btn-sm">✅ Restaurar Post</button>
                                         </form>
@@ -46,83 +44,83 @@
                         {% endfor %}
                     </div>
                 {% else %}
-                    <div class="alert alert-info">
-                        <strong>ℹ️</strong> Nenhum post oculto no momento. Todos os posts foram aprovados!
+                    <div class="alert alert-info border-0">
+                        ℹ️ Nenhum post oculto no momento. Todos os posts foram aprovados!
                     </div>
                 {% endif %}
             </div>
 
-            <!-- Comentários Ocultos -->
-            <div class="tab-pane fade" id="comentarios" role="tabpanel">
+            <div class="tab-pane fade" id="comentarios" role="tabpanel" aria-labelledby="comentarios-tab">
                 <h4 class="text-light mb-3">Comentários Ocultos por Moderação</h4>
                 
                 {% if comentarios_ocultos %}
                     <div class="list-group">
                         {% for comentario in comentarios_ocultos %}
-                            <div class="list-group-item bg-secondary p-3 mb-2">
+                            <div class="list-group-item bg-secondary p-3 mb-2 border-0 rounded">
                                 <div class="row align-items-center">
                                     <div class="col-md-8">
                                         <h6 class="text-info mb-2">
                                             <strong>Post ID:</strong> {{ comentario.post_id }}
                                         </h6>
-                                        <p class="text-muted mb-1">
+                                        <p class="text-white-50 small mb-1">
                                             <strong>Autor:</strong> {{ usuarios.get(comentario.autor_email, {}).nome or comentario.autor_email }}
                                         </p>
-                                        <p class="text-muted mb-2">
+                                        <p class="text-white-50 small mb-2">
                                             <strong>Data:</strong> {{ comentario.data_criacao.strftime('%d/%m/%Y %H:%M') }}
                                         </p>
                                         <p class="text-light mb-2">{{ comentario.texto }}</p>
                                         
-                                        <div class="badge bg-warning text-dark">⚠️ Conteúdo Bloqueado</div>
+                                        <span class="badge bg-warning text-dark">⚠️ Conteúdo Bloqueado</span>
                                     </div>
-                                    <div class="col-md-4 text-center">
-                                        <p class="text-muted">Motivo: Conteúdo impróprio</p>
+                                    <div class="col-md-4 text-md-end text-center mt-3 mt-md-0">
+                                        <p class="text-warning small mb-2">Motivo: Conteúdo impróprio</p>
+                                        <form action="{{ url_for('restaurar_comentario', comentario_id=comentario.id) }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-success btn-sm">✅ Restaurar</button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
                         {% endfor %}
                     </div>
                 {% else %}
-                    <div class="alert alert-info">
-                        <strong>ℹ️</strong> Nenhum comentário oculto no momento. Todos os comentários foram aprovados!
+                    <div class="alert alert-info border-0">
+                        ℹ️ Nenhum comentário oculto no momento. Todos os comentários foram aprovados!
                     </div>
                 {% endif %}
             </div>
         </div>
 
-        <!-- Estatísticas -->
         <div class="row mt-5">
-            <div class="col-md-4">
-                <div class="card bg-dark border border-light">
-                    <div class="card-body text-center">
-                        <h3 class="text-warning">{{ posts_ocultos|length }}</h3>
-                        <p class="text-muted">Posts Ocultos</p>
+            <div class="col-md-4 mb-3">
+                <div class="card bg-dark border-secondary h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <h3 class="text-warning display-6 fw-bold">{{ posts_ocultos|length }}</h3>
+                        <p class="text-muted mb-0">Posts Ocultos</p>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card bg-dark border border-light">
-                    <div class="card-body text-center">
-                        <h3 class="text-warning">{{ comentarios_ocultos|length }}</h3>
-                        <p class="text-muted">Comentários Ocultos</p>
+            <div class="col-md-4 mb-3">
+                <div class="card bg-dark border-secondary h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <h3 class="text-warning display-6 fw-bold">{{ comentarios_ocultos|length }}</h3>
+                        <p class="text-muted mb-0">Comentários Ocultos</p>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card bg-dark border border-light">
-                    <div class="card-body text-center">
-                        <h3 class="text-success">{{ posts_ocultos|length + comentarios_ocultos|length }}</h3>
-                        <p class="text-muted">Total Bloqueado</p>
+            <div class="col-md-4 mb-3">
+                <div class="card bg-dark border-secondary h-100">
+                    <div class="card-body text-center d-flex flex-column justify-content-center">
+                        <h3 class="text-success display-6 fw-bold">{{ posts_ocultos|length + comentarios_ocultos|length }}</h3>
+                        <p class="text-muted mb-0">Total Bloqueado</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Informações de Moderação -->
-        <div class="alert alert-info mt-5">
+        <div class="alert alert-info mt-4 border-0">
             <h5 class="alert-heading">ℹ️ Sobre o Sistema de Moderação</h5>
             <p>O sistema de moderação automática bloqueia conteúdos que contêm os seguintes termos:</p>
-            <ul class="mb-0">
+            <ul class="mb-3">
                 <li>Racismo, preconceito e discriminação</li>
                 <li>Xingamentos e linguagem ofensiva</li>
                 <li>Conteúdo sexual ou violento</li>
@@ -131,11 +129,9 @@
                 <li>Terrorismo ou extremismo</li>
                 <li>Pornografia ou conteúdo adulto</li>
             </ul>
-            <hr>
+            <hr class="border-info">
             <p class="mb-0"><strong>Admin:</strong> Você pode restaurar posts ou comentários se considerar que foram bloqueados incorretamente.</p>
         </div>
     </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 {% endblock %}

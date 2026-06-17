@@ -1,64 +1,10 @@
-{% if request.path == '/biblioteca' %}
-    {% extends 'base.html' %}
-    {% block content %}
-    <div class="container mt-5">
-        <h1>📚 Minha Biblioteca Pessoal</h1>
-        <p class="text-muted">Gerencie seus jogos, adicione avaliações e acompanhe seu progresso</p>
-{% endif %}
+{% extends 'base.html' %}
 
-<div data-biblioteca-content>
-    {% if biblioteca %}
-        <div class="row">
-            {% for item_biblioteca in biblioteca %}
-                {% set jogo = jogos.get(item_biblioteca.jogo_id) %}
-                {% if jogo %}
-                    <div class="col-md-6 mb-4">
-                        <div class="card h-100 bg-dark border-light">
-                            <div class="card-body text-light">
-                                <h5 class="card-title">{{ jogo.titulo }}</h5>
-                                <p class="card-text">
-                                    <small class="text-muted">
-                                        {{ jogo.genero }} | {{ jogo.desenvolvedora }} ({{ jogo.ano }})
-                                    </small>
-                                </p>
-                                
-                                <!-- Informações do jogo na biblioteca -->
-                                <div class="mb-3">
-                                    <p class="mb-1"><strong>Adicionado em:</strong> {{ item_biblioteca.data_adicao.strftime('%d/%m/%Y') }}</p>
-                                    <p class="mb-1"><strong>Tempo Jogado:</strong> {{ item_biblioteca.tempo_jogado_horas }}h</p>
-                                    <p class="mb-1">
-                                        <strong>Status:</strong>
-                                        {% if item_biblioteca.platinado %}
-                                            <span class="badge bg-warning text-dark">⭐ Platinado</span>
-                                        {% elif item_biblioteca.concluido %}
-                                            <span class="badge bg-success">✅ Concluído</span>
-                                        {% else %}
-                                            <span class="badge bg-info">🎮 Jogando</span>
-                                        {% endif %}
-                                    </p>
-                                </div>
-
-                                <!-- Botões de ação -->
-                                <div class="btn-group btn-group-sm w-100 mb-2" role="group">
-                                    <a href="{{ url_for('perfil', email=session.get('user_email')) }}#reviews-{{ jogo.id }}" class="btn btn-outline-warning">⭐ Avaliar</a>
-                                    <form action="{{ url_for('remover_biblioteca', jogo_id=jogo.id) }}" method="GET" style="display:inline;">
-                                        <button type="submit" class="btn btn-outline-danger">🗑️ Remover</button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                {% endif %}
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="alert alert-info" role="alert">
-            <h5>📚 Sua biblioteca está vazia!</h5>
-            <p>Volte para a aba de Jogos e adicione alguns títulos à sua biblioteca. Aqui você poderá acompanhar seu progresso e avaliar os jogos!</p>
-        </div>
-    {% endif %}
+{% block content %}
+<div class="container mt-5">
+    <h3>📚 Minha Biblioteca Pessoal</h3>
+    <p class="text-muted">Gerencie sua coleção de jogos salvos</p>
+    
+    {% include '_biblioteca_conteudo.html' %}
 </div>
-
-{% if request.path == '/biblioteca' %}
-    {% endblock %}
-{% endif %}
+{% endblock %}

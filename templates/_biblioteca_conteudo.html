@@ -1,0 +1,21 @@
+<div data-biblioteca-content>
+    {% if biblioteca %}
+        <div class="row">
+            {% for jogo in biblioteca %}
+                <div class="col-md-4 mb-3">
+                    <div class="card bg-dark text-white border-light">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ jogo.titulo }}</h5>
+                            <p class="card-text text-white-50"><small>Gênero: {{ jogo.genero }}</small></p>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            <h5>📚 Sua biblioteca está vazia!</h5>
+            <p>Adicione alguns jogos no catálogo principal.</p>
+        </div>
+    {% endif %}
+</div>

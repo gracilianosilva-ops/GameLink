@@ -31,7 +31,7 @@ class Usuario(EntidadeBase):
 
 
 class Admin(Usuario):
-    #Classe que herda de Usuario
+    # Classe que herda de Usuario
     def __init__(self, id_entidade: int, nome: str, email: str, password: str, nivel_acesso: int = 1):
         super().__init__(id_entidade, nome, email, password)
         self.nivel_acesso = nivel_acesso

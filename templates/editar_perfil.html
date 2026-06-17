@@ -2,7 +2,7 @@
 {% block content %}
 <div class="row">
     <div class="col-md-8 offset-md-2">
-        <div class="card bg-secondary text-white p-4">
+        <div class="card bg-secondary text-white p-4 border-light">
             <h2 class="mb-4">✏️ Editar Perfil</h2>
             
             <form action="{{ url_for('salvar_perfil') }}" method="POST">
@@ -18,8 +18,8 @@
 
                 <div class="mb-3">
                     <label for="gosto_jogos" class="form-label">🎮 Gosto de Jogos</label>
-                    <textarea class="form-control" id="gosto_jogos" name="gosto_jogos" rows="3" placeholder="Ex: Adoro RPGs e jogos de ação, prefiro Single Player...">{{ usuario.gosto_jogos }}</textarea>
-                    <small class="text-muted">Descreva seus gostos e preferências em jogos</small>
+                    <textarea class="form-control" id="gosto_jogos" name="gosto_jogos" rows="3" placeholder="Ex: Adoro RPGs e jogos de ação...">{{ usuario.gosto_jogos or '' }}</textarea>
+                    <small class="text-white-50">Descreva seus gostos e preferências em jogos</small>
                 </div>
 
                 <div class="mb-3">
@@ -27,12 +27,12 @@
                     <input type="tel" class="form-control" id="telefone" name="telefone" value="{{ usuario.telefone or '' }}" placeholder="(XX) XXXXX-XXXX">
                 </div>
 
-                <hr>
+                <hr class="border-light">
 
                 <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">🏠 Página Inicial</a>
-                    <a href="{{ url_for('perfil', email=session['user_email']) }}" class="btn btn-secondary">❌ Cancelar</a>
-                    <button type="submit" class="btn btn-primary">💾 Salvar Alterações</button>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light">🏠 Início</a>
+                    <a href="{{ url_for('perfil', email=session['user_email']) }}" class="btn btn-danger">❌ Cancelar</a>
+                    <button type="submit" class="btn btn-success">💾 Salvar Alterações</button>
                 </div>
             </form>
         </div>
