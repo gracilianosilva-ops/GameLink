@@ -12,4 +12,8 @@
 
 > python app.py
 
+*Ou inicialize apenas a base de dados antes de rodar o app:*
+
+> python database.py
+
 *Abra http://127.0.0.1:5000 no seu navegador.*

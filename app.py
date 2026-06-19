@@ -14,9 +14,13 @@ from urllib.request import urlopen
 from werkzeug.utils import secure_filename
 from datetime import datetime
 from excecao import GameLinkException, AutenticacaoError, OperacaoInvalidaError
+from database import init_db
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key_gamelink"
+
+# Inicializa o banco de dados SQLite se ainda não existir
+init_db()
 
 # Configuração de uploads
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
@@ -268,8 +272,10 @@ def deletar_jogo(id):
 # --- Busca Avançada (RF13) ---
 @app.route('/busca')
 def busca():
-    if 'user_email' not in session: 
+    if 'user_email' not in session:
         return redirect(url_for('login'))
+
+    meu_email = session['user_email']
     termo = request.args.get('termo', '').lower()
     filtro = request.args.get('filtro', 'titulo')
     resultados = []
@@ -279,8 +285,33 @@ def busca():
             resultados.append(jogo)
         elif filtro == 'genero' and termo in jogo.genero.lower():
             resultados.append(jogo)
-            
-    return render_template('dashboard.html', jogos=resultados, usuarios=USUARIOS_DB, busca_termo=termo)
+
+    for jogo in resultados:
+        jogo.capa_url = obter_capa_jogo(jogo.titulo)
+
+    posts_visiveis = {k: v for k, v in POSTS_DB.items() if v.visivel}
+    comentarios_visiveis = [c for c in COMENTARIOS_POSTS_DB if c.visivel]
+    notif_list = GerenciadorNotificacoes.obter_notificacoes(meu_email)
+    notif_nao_lidas = GerenciadorNotificacoes.contar_nao_lidas(meu_email)
+    biblioteca_cards = montar_biblioteca_cards(meu_email)
+    contexto_amigos = montar_amigos_contexto(meu_email)
+
+    return render_template(
+        'dashboard.html',
+        jogos=resultados,
+        usuarios=USUARIOS_DB,
+        posts=posts_visiveis,
+        comentarios_posts=comentarios_visiveis,
+        notif_nao_lidas=notif_nao_lidas,
+        notificacoes=notif_list,
+        biblioteca_cards=biblioteca_cards,
+        amigos=contexto_amigos['amigos'],
+        amigos_emails=contexto_amigos['amigos_emails'],
+        solicitacoes_pendentes=contexto_amigos['pendentes'],
+        usuarios_sugeridos=contexto_amigos['sugeridos'],
+        busca_termo=termo,
+        filtro_selecionado=filtro
+    )
 
 # --- Funcionalidades de Rede Social ---
 @app.route('/perfil/<email>')
