@@ -1,0 +1,30 @@
+<div id="game-activity-widget">
+    <div class="status">Nenhum jogo detectado</div>
+</div>
+
+<script>
+    async function fetchStatus() {
+        try {
+            const res = await fetch('/api/game-activity/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            const el = document.getElementById('game-activity-widget');
+            if (!data) {
+                el.innerHTML = '<div class="status">Nenhum jogo ativo</div>';
+                return;
+            }
+            if (data.status === 'ingame') {
+                el.innerHTML = `<div class="status">Jogando: ${data.jogo}</div>`;
+            } else if (data.status === 'launcher') {
+                el.innerHTML = `<div class="status">Launcher ativo: ${data.launcher}</div>`;
+            } else {
+                el.innerHTML = '<div class="status">Nenhum jogo ativo</div>';
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    setInterval(fetchStatus, 2000);
+    fetchStatus();
+</script>

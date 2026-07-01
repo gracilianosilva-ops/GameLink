@@ -9,6 +9,14 @@ CREATE TABLE IF NOT EXISTS usuarios (
     idade INTEGER,
     gosto_jogos TEXT,
     telefone TEXT,
+    steam_id64 TEXT,
+    steam_api_key TEXT,
+    hydra_account_email TEXT,
+    hydra_usuario TEXT,
+    hydra_pin TEXT,
+    hydra_token TEXT,
+    hydra_current_game TEXT,
+    hydra_last_update TEXT,
     is_admin INTEGER NOT NULL DEFAULT 0
 );
 
@@ -92,6 +100,17 @@ CREATE TABLE IF NOT EXISTS reviews (
     visivel INTEGER NOT NULL DEFAULT 1,
     curtidas INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(jogo_id) REFERENCES jogos(id) ON DELETE CASCADE,
+    FOREIGN KEY(email_usuario) REFERENCES usuarios(email) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS review_comentarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id INTEGER NOT NULL,
+    email_usuario TEXT NOT NULL,
+    texto TEXT NOT NULL,
+    data_criacao TEXT NOT NULL,
+    visivel INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY(review_id) REFERENCES reviews(id) ON DELETE CASCADE,
     FOREIGN KEY(email_usuario) REFERENCES usuarios(email) ON DELETE CASCADE
 );
 

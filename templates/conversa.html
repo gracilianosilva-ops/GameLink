@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+        <div class="card bg-secondary text-white p-4 border-light">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h3 class="mb-1">💬 Conversa com {{ amigo.nome }}</h3>
+                    <p class="text-white-50 mb-0">{{ amigo.email }}</p>
+                </div>
+                <a href="{{ url_for('perfil', email=amigo.email) }}" class="btn btn-outline-info">Voltar ao Perfil</a>
+            </div>
+
+            <div class="chat-window bg-dark p-3 rounded mb-4" style="min-height: 420px; max-height: 520px; overflow-y: auto;">
+                {% if mensagens %}
+                    {% for msg in mensagens %}
+                        {% set autor = usuarios.get(msg.email_remetente) %}
+                        <div class="mb-3 text-end{% if msg.email_remetente != session.get('user_email') %} text-start{% endif %}">
+                            <div class="d-flex {% if msg.email_remetente == session.get('user_email') %}justify-content-end{% else %}justify-content-start{% endif %}">
+                                {% if msg.email_remetente != session.get('user_email') %}
+                                    <div class="me-2">
+                                        {% if autor and autor.foto_perfil %}
+                                            <img src="{{ autor.foto_perfil }}" alt="Avatar" class="rounded-circle" style="width:36px;height:36px;object-fit:cover;">
+                                        {% else %}
+                                            <div class="rounded-circle bg-info d-flex align-items-center justify-content-center text-dark fw-bold" style="width:36px;height:36px;">{{ autor.nome[:1]|default('?')|upper }}</div>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                                <div class="d-inline-block p-3 rounded-pill {% if msg.email_remetente == session.get('user_email') %}bg-primary text-white{% else %}bg-light text-dark{% endif %}" style="max-width: 85%;">
+                                    <small class="d-block text-white-50 mb-2">{{ 'Você' if msg.email_remetente == session.get('user_email') else autor.nome if autor else msg.email_remetente }} • {{ msg.data_envio.strftime('%d/%m/%Y %H:%M') }}</small>
+                                    <p class="mb-0">{{ msg.conteudo }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center text-white-50 py-5">
+                        <p>Nenhuma mensagem ainda. Envie a primeira mensagem para {{ amigo.nome }}.</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <form action="{{ url_for('enviar_mensagem', email_destino=amigo.email) }}" method="POST">
+                <div class="mb-3">
+                    <label for="conteudo" class="form-label">Escreva sua mensagem</label>
+                    <textarea class="form-control" id="conteudo" name="conteudo" rows="3" required></textarea>
+                </div>
+                <button type="submit" class="btn btn-success">Enviar</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

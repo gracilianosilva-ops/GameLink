@@ -23,10 +23,12 @@
                 <div class="text-center mt-3">
                     <a href="{{ url_for('cadastro') }}">Criar Conta</a> | <a href="{{ url_for('recuperar') }}">Esqueci a Senha</a>
                 </div>
-                <hr>
-                <small class="text-muted">Dica de professor: Entre com <strong>admin@gamelink.com</strong> e senha <strong>admin123</strong> para simular o CRUD de gerenciamento de jogos!</small>
             </div>
         </div>
+    </div>
+
+    <div class="text-center mt-4">
+        <small class="login-slogan">Sua rede centralizada de jogos</small>
     </div>
 </div>
 
@@ -57,6 +59,12 @@
         font-weight: 700;
         color: #e5eefb;
         letter-spacing: -0.02em;
+    }
+
+    .login-slogan {
+        color: #93c5fd;
+        font-weight: 600;
+        letter-spacing: 0.02em;
     }
 
     .login-card {

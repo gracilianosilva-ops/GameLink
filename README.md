@@ -1,19 +1,43 @@
-**Visão Geral**
+# GameLink
 
-   O GameLink é uma rede social dedicada à comunidade de jogadores, focada no compartilhamento de experiências, mídias e construção de perfis focados em histórico de jogo. 
-   A plataforma permite que os utilizadores registrem as experiências dos seus jogos favoritos e interajam com outros jogadores com interesses semelhantes.
+## Visão Geral
+GameLink é uma plataforma web voltada para jogadores, com funcionalidades de cadastro, perfil, biblioteca de jogos, posts, amizades, reviews e notificações. O projeto foi organizado em módulos para reforçar a abordagem orientada a objetos.
 
- **Como rodar e validar**
-*Instale o Flask via terminal:*
+## Requisitos atendidos
+- Mínimo de 10 classes concretas: o projeto conta com classes como Usuario, Admin, Jogo, Categoria, Post, Comentario, SolicitaçãoAmizade, BibliotecaJogo, Review, ComentarioReview, Notificacao, Mensagem e PerfilJogador.
+- Herança: Usuario herda de EntidadeBase e Admin herda de Usuario.
+- Encapsulamento: atributos privados e protegidos são usados em classes como Usuario e PerfilJogador.
+- Tratamento de exceções: exceções personalizadas em excecao.py para autenticação e operações inválidas.
+- Modularização: o código está organizado em módulos e pacotes dentro da pasta modelos.
 
-> pip install Flask
+## Estrutura do projeto
+- app.py: aplicação Flask principal.
+- modelos/: classes de domínio e regras de negócio.
+- database.py: inicialização do banco de dados.
+- templates/: interfaces web.
+- static/: arquivos estáticos.
 
-*Execute o arquivo principal do sistema:*
+## Como executar
+1. Entre na pasta do projeto.
+2. Crie ou ative um ambiente virtual.
+3. Instale as dependências:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Inicie a aplicação:
+   ```bash
+   python app.py
+   ```
+5. Acesse http://127.0.0.1:5000.
 
-> python app.py
+## Variáveis de e-mail
+Para ativar o envio real de e-mails, configure:
+- MAIL_HOST
+- MAIL_PORT
+- MAIL_USERNAME
+- MAIL_PASSWORD
+- MAIL_FROM
+- MAIL_USE_TLS
+- MAIL_USE_SSL
 
-*Ou inicialize apenas a base de dados antes de rodar o app:*
-
-> python database.py
-
-*Abra http://127.0.0.1:5000 no seu navegador.*
+Se não forem configuradas, o sistema entra em modo local de teste e exibe o código de verificação na tela.

@@ -2,11 +2,13 @@ from datetime import datetime
 from modelos.base import EntidadeBase
 from excecao import OperacaoInvalidaError
 
-# Banco de dados simulado para amigos, biblioteca e reviews
+# Banco de dados simulado para amigos, biblioteca, reviews e mensagens
 AMIZADES_DB = {}  
 BIBLIOTECA_DB = {}  
 REVIEWS_DB = {}  
+REVIEW_COMENTARIOS_DB = []
 NOTIFICACOES_DB = {}  
+MENSAGENS_DB = []  
 
 class SolicitacaoAmizade(EntidadeBase):
     """Classe para gerenciar solicitações de amizade"""
@@ -30,7 +32,7 @@ class SolicitacaoAmizade(EntidadeBase):
 
 class BibliotecaJogo(EntidadeBase):
     """Classe para armazenar informações do jogo na biblioteca do usuário"""
-    def __init__(self, id_entidade: int, email_usuario: str, jogo_id: int):
+    def __init__(self, id_entidade: int, email_usuario: str, jogo_id: int, origem: str = 'manual'):
         super().__init__(id_entidade)
         self.email_usuario = email_usuario
         self.jogo_id = jogo_id
@@ -38,12 +40,29 @@ class BibliotecaJogo(EntidadeBase):
         self.tempo_jogado_horas = 0  
         self.concluido = False
         self.platinado = False  
+        self.avaliacao = 0.0
+        self.comentario_avaliacao = ""
+        self.origem = origem
+        self.codigo_origem = ""
+        self.conquistas_desbloqueadas = 0
+        self.conquistas_total = 0
+        self.cover_url = ""
 
     def atualizar_tempo_jogado(self, horas: int):
         if horas >= 0:
             self.tempo_jogado_horas = horas
         else:
             raise OperacaoInvalidaError("Tempo jogado não pode ser negativo")
+
+    def atualizar_avaliacao(self, nota: float):
+        if nota < 0:
+            nota = 0.0
+        elif nota > 5:
+            nota = 5.0
+        self.avaliacao = round(float(nota), 1)
+
+    def atualizar_comentario_avaliacao(self, comentario: str):
+        self.comentario_avaliacao = (comentario or "").strip()
 
     def marcar_concluido(self):
         self.concluido = True
@@ -54,7 +73,7 @@ class BibliotecaJogo(EntidadeBase):
 
     def obter_resumo(self) -> str:
         status = "Platinado" if self.platinado else ("Concluído" if self.concluido else "Jogando")
-        return f"{self.email_usuario} - Jogo {self.jogo_id}: {status} ({self.tempo_jogado_horas}h)"
+        return f"{self.email_usuario} - Jogo {self.jogo_id}: {status} ({self.tempo_jogado_horas}h) - Avaliação: {self.avaliacao}/5.0"
 
 
 class Review(EntidadeBase):
@@ -69,6 +88,7 @@ class Review(EntidadeBase):
         self.data_criacao = datetime.now()
         self.visivel = True
         self.curtidas = 0  
+        self.comentarios_ids = []
 
     def atualizar_nota(self, nova_nota: int):
         self.nota = max(1, min(nova_nota, 5))
@@ -84,8 +104,26 @@ class Review(EntidadeBase):
         if self.curtidas > 0:
             self.curtidas -= 1
 
+    def adicionar_comentario(self, comentario_id: int):
+        if comentario_id not in self.comentarios_ids:
+            self.comentarios_ids.append(comentario_id)
+
     def obter_resumo(self) -> str:
         return f"Review: {self.titulo} ({self.nota}/5) por {self.email_usuario}"
+
+
+class ComentarioReview(EntidadeBase):
+    """Classe para comentários em reviews de jogos"""
+    def __init__(self, id_entidade: int, review_id: int, email_usuario: str, texto: str):
+        super().__init__(id_entidade)
+        self.review_id = review_id
+        self.email_usuario = email_usuario
+        self.texto = texto
+        self.data_criacao = datetime.now()
+        self.visivel = True
+
+    def obter_resumo(self) -> str:
+        return f"ComentárioReview #{self.id} - {self.email_usuario}: {self.texto[:50]}..."
 
 
 class Notificacao(EntidadeBase):
@@ -106,6 +144,43 @@ class Notificacao(EntidadeBase):
     def obter_resumo(self) -> str:
         status = "Lida" if self.lida else "Não lida"
         return f"Notificação ({self.tipo}): {self.titulo} - {status}"
+
+
+class Mensagem(EntidadeBase):
+    """Classe para mensagens privadas entre amigos"""
+    def __init__(self, id_entidade: int, email_remetente: str, email_destino: str, conteudo: str):
+        super().__init__(id_entidade)
+        self.email_remetente = email_remetente
+        self.email_destino = email_destino
+        self.conteudo = conteudo
+        self.data_envio = datetime.now()
+
+    def obter_resumo(self) -> str:
+        return f"{self.email_remetente} -> {self.email_destino}: {self.conteudo[:50]}"
+
+
+class GerenciadorMensagens:
+    """Classe para gerenciar mensagens privadas"""
+    @staticmethod
+    def enviar_mensagem(id_mensagem: int, email_remetente: str, email_destino: str, conteudo: str) -> Mensagem:
+        mensagem = Mensagem(id_mensagem, email_remetente, email_destino, conteudo)
+        MENSAGENS_DB.append(mensagem)
+        return mensagem
+
+    @staticmethod
+    def obter_conversa(email1: str, email2: str) -> list:
+        conversa = [m for m in MENSAGENS_DB if {m.email_remetente, m.email_destino} == {email1, email2}]
+        return sorted(conversa, key=lambda x: x.data_envio)
+
+    @staticmethod
+    def obter_conversas_recentes(email: str) -> list:
+        conversas = {}
+        for m in MENSAGENS_DB:
+            if m.email_remetente == email or m.email_destino == email:
+                amigo = m.email_destino if m.email_remetente == email else m.email_remetente
+                if amigo not in conversas or m.data_envio > conversas[amigo].data_envio:
+                    conversas[amigo] = m
+        return sorted(conversas.values(), key=lambda x: x.data_envio, reverse=True)
 
 
 class GerenciadorAmigos:
@@ -177,6 +252,16 @@ class GerenciadorBiblioteca:
         return item
 
     @staticmethod
+    def atualizar_avaliacao(email: str, jogo_id: int, nota: float, comentario: str = ""):
+        chave = f"{email}_{jogo_id}"
+        if chave not in BIBLIOTECA_DB:
+            raise OperacaoInvalidaError("Jogo não encontrado na biblioteca")
+        item = BIBLIOTECA_DB[chave]
+        item.atualizar_avaliacao(nota)
+        item.atualizar_comentario_avaliacao(comentario)
+        return item
+
+    @staticmethod
     def remover_jogo(email: str, jogo_id: int):
         chave = f"{email}_{jogo_id}"
         if chave in BIBLIOTECA_DB:
@@ -202,6 +287,17 @@ class GerenciadorReviews:
         return review
 
     @staticmethod
+    def adicionar_comentario_review(id_comentario: int, review_id: int, email: str, texto: str) -> ComentarioReview:
+        review = REVIEWS_DB.get(review_id)
+        if not review or not review.visivel:
+            raise OperacaoInvalidaError("Review não encontrada")
+
+        comentario = ComentarioReview(id_comentario, review_id, email, texto)
+        REVIEW_COMENTARIOS_DB.append(comentario)
+        review.adicionar_comentario(id_comentario)
+        return comentario
+
+    @staticmethod
     def obter_reviews_jogo(jogo_id: int) -> list:
         reviews = [r for r in REVIEWS_DB.values() if r.jogo_id == jogo_id and r.visivel]
         return sorted(reviews, key=lambda x: x.curtidas, reverse=True)
@@ -217,6 +313,18 @@ class GerenciadorReviews:
             REVIEWS_DB[review_id].visivel = False
         else:
             raise OperacaoInvalidaError("Review não encontrado")
+
+    @staticmethod
+    def obter_comentarios_review(review_id: int) -> list:
+        comentarios = [c for c in REVIEW_COMENTARIOS_DB if c.review_id == review_id and c.visivel]
+        return sorted(comentarios, key=lambda x: x.data_criacao)
+
+    @staticmethod
+    def deletar_comentario_review(comentario_id: int):
+        comentario = next((c for c in REVIEW_COMENTARIOS_DB if c.id == comentario_id), None)
+        if not comentario:
+            raise OperacaoInvalidaError("Comentário de review não encontrado")
+        comentario.visivel = False
 
     @staticmethod
     def obter_media_nota_jogo(jogo_id: int) -> float:
@@ -254,6 +362,14 @@ class GerenciadorNotificacoes:
     @staticmethod
     def contar_nao_lidas(email: str) -> int:
         return len(GerenciadorNotificacoes.obter_notificacoes(email, nao_lidas_apenas=True))
+
+    @staticmethod
+    def contar_nao_lidas_por_tipo(email: str, tipo: str) -> int:
+        return sum(
+            1
+            for notificacao in GerenciadorNotificacoes.obter_notificacoes(email, nao_lidas_apenas=True)
+            if notificacao.tipo == tipo
+        )
 
     @staticmethod
     def notificar_novo_post(email_receptor: str, titulo: str, descricao: str, post_id: int, id_notif: int):

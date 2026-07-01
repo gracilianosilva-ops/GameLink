@@ -1,28 +1,154 @@
 <div data-biblioteca-content>
     {% if biblioteca_cards %}
-        <div class="row g-3">
-            {% for card in biblioteca_cards %}
-                <div class="col-12 col-md-6 col-xl-4">
-                    <div class="library-card h-100">
+        <div class="surface-panel p-3 mb-4 d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3">
+            <div>
+                <h5 class="mb-1">Biblioteca unificada</h5>
+                <p class="text-white-50 mb-0">Filtre jogos Steam, Hydra ou manuais em uma única lista.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light btn-sm">🏠 Voltar ao painel</a>
+                <div data-library-filters>
+                    <button type="button" class="btn btn-outline-light btn-sm active" data-library-filter="all">Todos</button>
+                    <button type="button" class="btn btn-outline-info btn-sm" data-library-filter="steam">Steam</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-library-filter="hydra">Hydra</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-library-filter="manual">Manual</button>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if steam_contexto and steam_contexto.configurado %}
+        <section class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <p class="text-info text-uppercase small fw-bold mb-2">Meus Steam</p>
+                    <h4 class="mb-2">🎮 Meus Steam</h4>
+                    <p class="text-white-50 mb-0">Aqui serão exibidos seus jogos da Steam.</p>
+                </div>
+                <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#steamJogosSection" aria-expanded="true" aria-controls="steamJogosSection" data-section-toggle>
+                    <span class="toggle-icon">−</span> <span class="toggle-label">Minimizar</span>
+                </button>
+            </div>
+
+            <div class="collapse show" id="steamJogosSection">
+                {% if steam_contexto.erro %}
+                    <div class="alert alert-warning">{{ steam_contexto.erro }}</div>
+                {% endif %}
+
+                <div class="row g-4 mb-2">
+                    {% for jogo_steam in steam_contexto.jogos %}
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <a href="{{ url_for('perfil', email=session.get('user_email'), steam_appid=jogo_steam.appid) }}#steam-conquistas-section" class="library-card h-100 glow-card text-decoration-none d-block">
+                            <div class="library-cover-wrap">
+                                <img src="{{ jogo_steam.cover_url }}" alt="Capa de {{ jogo_steam.name }}" class="library-cover" onerror='this.onerror=null;this.src="https://placehold.co/600x300/0f172a/38bdf8?text=Steam";'>
+                                <div class="library-cover-glow"></div>
+                            </div>
+                            <div class="p-3 d-flex flex-column gap-3">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <h5 class="mb-1">{{ jogo_steam.name }}</h5>
+                                        <p class="text-white-50 mb-0 small">Jogadas: {{ '%.1f'|format((jogo_steam.playtime_forever or 0) / 60) }}h</p>
+                                    </div>
+                                    <span class="badge bg-dark border border-info text-info">Meus Jogos</span>
+                                </div>
+                                <div class="d-grid">
+                                    <span class="btn btn-sm btn-outline-info">Ver conquistas</span>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                {% else %}
+                    <div class="col-12">
+                        <div class="empty-state-card p-3">
+                            <p class="mb-0 text-white-50">Nenhum jogo Steam carregado ainda.</p>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        </section>
+        <hr class="border-secondary my-4">
+    {% elif steam_contexto and not steam_contexto.configurado %}
+        <div class="empty-state-card p-3 mb-4">
+            <h5 class="mb-2">Conecte sua Steam</h5>
+            <p class="mb-0 text-white-50">Use SteamID64 ou uma URL pública do perfil no editor de perfil para mostrar seus jogos aqui.</p>
+        </div>
+    {% endif %}
+
+    {% if biblioteca_cards %}
+        <section class="surface-panel p-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">Jogos salvos</h5>
+                    <p class="text-white-50 mb-0">Gerencie sua coleção local com filtros rápidos.</p>
+                </div>
+                <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#bibliotecaCardsSection" aria-expanded="true" aria-controls="bibliotecaCardsSection" data-section-toggle>
+                    <span class="toggle-icon">−</span> <span class="toggle-label">Minimizar</span>
+                </button>
+            </div>
+            <div class="collapse show" id="bibliotecaCardsSection">
+                <div class="row g-4" data-library-grid>
+                    {% for card in biblioteca_cards %}
+                {% set avaliacao_atual = card.item.avaliacao|default(0)|round(1) %}
+                <div class="col-12 col-md-6 col-xl-4{% if loop.index > 6 %} d-none more-library-card{% endif %}" data-library-card data-library-source="{{ card.origem }}">
+                    <div class="library-card h-100 glow-card">
                         <div class="library-cover-wrap">
-                            <img src="{{ card.capa_url }}" alt="Capa de {{ card.jogo.titulo }}" class="library-cover">
+                            <img src="{{ card.capa_url }}" alt="Capa de {{ card.jogo.titulo }}" class="library-cover" onerror='this.onerror=null;this.src={{ card.capa_fallback|tojson }};'>
                             <div class="library-cover-glow"></div>
                         </div>
-                        <div class="p-3 d-flex flex-column gap-2">
-                            <div>
-                                <h5 class="mb-1">{{ card.jogo.titulo }}</h5>
-                                <p class="text-white-50 mb-0 small">{{ card.jogo.desenvolvedora }} • {{ card.jogo.ano }}</p>
-                                <p class="text-info mb-0 small">Gênero: {{ card.jogo.genero }}</p>
+                        <div class="p-3 d-flex flex-column gap-3">
+                            <div class="d-flex justify-content-between align-items-start gap-3">
+                                <div>
+                                    <h5 class="mb-1">{{ card.jogo.titulo }}</h5>
+                                    <p class="text-white-50 mb-0 small">{{ card.jogo.desenvolvedora }} • {{ card.jogo.ano }}</p>
+                                    <p class="text-info mb-0 small">Gênero: {{ card.jogo.genero }}</p>
+                                </div>
+                                <div class="d-flex flex-column align-items-end gap-2">
+                                    <span class="badge bg-dark border border-info text-info text-uppercase">{{ card.origem }}</span>
+                                    <span class="badge bg-dark border border-info text-info">{% if avaliacao_atual > 0 %}{{ '%.1f'|format(avaliacao_atual) }}/5{% else %}Sem avaliação{% endif %}</span>
+                                </div>
                             </div>
-                            <div class="d-flex flex-wrap gap-2 mt-auto">
-                                <span class="badge bg-dark border border-info text-info">Adicionado em {{ card.item.data_adicao.strftime('%d/%m/%Y') }}</span>
-                                <span class="badge bg-dark border border-secondary text-light">{{ card.item.tempo_jogado_horas }}h jogadas</span>
-                                {% if card.item.platinado %}
-                                    <span class="badge bg-warning text-dark">Platinado</span>
-                                {% elif card.item.concluido %}
-                                    <span class="badge bg-success">Concluído</span>
-                                {% else %}
-                                    <span class="badge bg-primary">Em andamento</span>
+                            {% if card.jogo.listar_categorias %}
+                                <div class="d-flex flex-wrap gap-2">
+                                    {% for categoria in card.jogo.listar_categorias() %}
+                                        <span class="badge bg-dark border border-secondary text-light">{{ categoria }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            <div class="d-grid gap-2 stat-grid mt-auto">
+                                <div class="stat-chip"><span>Adicionado</span><strong>{{ card.item.data_adicao.strftime('%d/%m/%Y') }}</strong></div>
+                                <div class="stat-chip"><span>Jogado</span><strong>{{ card.item.tempo_jogado_horas }}h</strong></div>
+                                <div class="stat-chip"><span>Status</span><strong>{% if card.item.platinado %}Platinado{% elif card.item.concluido %}Concluído{% else %}Em andamento{% endif %}</strong></div>
+                            </div>
+                            <div class="rating-block mt-1">
+                                <form action="{{ url_for('avaliar_biblioteca', jogo_id=card.jogo.id) }}" method="POST" class="star-rating-form">
+                                    <div class="rating-head" aria-live="polite">
+                                        <div>
+                                            <span class="star-label d-block" data-library-rating-value>{% if avaliacao_atual > 0 %}{{ '%.1f'|format(avaliacao_atual) }} / 5{% else %}Sem avaliação{% endif %}</span>
+                                            <small class="text-white-50">Clique nas estrelas para avaliar ou use 0 para limpar.</small>
+                                        </div>
+                                        <span class="star-icons" aria-hidden="true">{% for i in range(1,6) %}<span class="star-icon{{ ' active' if avaliacao_atual >= i else '' }}">★</span>{% endfor %}</span>
+                                    </div>
+                                    <input type="hidden" name="nota" value="{{ avaliacao_atual }}">
+                                    <div class="star-picker" role="radiogroup" aria-label="Avaliação de {{ card.jogo.titulo }}">
+                                        <div class="star-picker-zero-row">
+                                            <button type="button" class="star-choice zero{{ ' active' if avaliacao_atual == 0 else '' }}" data-rating="0" aria-label="Limpar avaliação" onclick="selectLibraryRating(this, event)">0</button>
+                                        </div>
+                                        <div class="star-picker-stars-row">
+                                            {% for i in range(1,6) %}
+                                                <button type="button" class="star-choice{{ ' active' if avaliacao_atual >= i else '' }}" data-rating="{{ i }}" aria-label="{{ i }} estrelas" onclick="selectLibraryRating(this, event)">★</button>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    <label class="form-label mb-0 small text-white-50" for="comentario-{{ card.jogo.id }}">Comentário da avaliação</label>
+                                    <textarea id="comentario-{{ card.jogo.id }}" name="comentario" class="form-control evaluation-comment" rows="3" placeholder="Escreva o que achou do jogo...">{{ card.item.comentario_avaliacao or '' }}</textarea>
+                                    <button type="submit" class="btn btn-sm btn-outline-warning w-100">Salvar avaliação</button>
+                                </form>
+                                {% if card.item.comentario_avaliacao %}
+                                    <div class="evaluation-comment-preview mt-3">
+                                        <small class="text-white-50 d-block mb-1">Comentário salvo</small>
+                                        <p class="mb-0">{{ card.item.comentario_avaliacao }}</p>
+                                    </div>
                                 {% endif %}
                             </div>
                             <div class="d-flex gap-2 pt-1">
@@ -34,10 +160,110 @@
                 </div>
             {% endfor %}
         </div>
+        {% if biblioteca_cards|length > 6 %}
+            <div class="mt-3 text-center">
+                <button type="button" class="btn btn-outline-info" data-show-more="biblioteca">Ver mais jogos</button>
+            </div>
+        {% endif %}
+        <div class="pagination-shell" data-library-pagination hidden></div>
+        </section>
     {% else %}
         <div class="empty-state-card">
-            <h5 class="mb-2">📚 Sua biblioteca está vazia</h5>
-            <p class="mb-0 text-white-50">Adicione jogos no catálogo para montar sua coleção e acompanhar seu progresso.</p>
+            <h5 class="mb-2">📚 Adicione jogos Steam</h5>
+            <p class="mb-0 text-white-50">Importe sua Steam ou Hydra para ver tudo unificado aqui.</p>
         </div>
     {% endif %}
 </div>
+
+<script>
+    (function () {
+        const filterButtons = document.querySelectorAll('[data-library-filter]');
+        const cards = document.querySelectorAll('[data-library-card]');
+        if (!filterButtons.length || !cards.length) {
+            return;
+        }
+
+        const setActiveButton = (source) => {
+            filterButtons.forEach((button) => {
+                const active = button.dataset.libraryFilter === source;
+                button.classList.toggle('active', active);
+                button.classList.toggle('btn-outline-light', source === 'all' && active);
+            });
+        };
+
+        const applyFilter = (source) => {
+            cards.forEach((card) => {
+                const cardSource = card.dataset.librarySource || 'manual';
+                const visible = source === 'all' || cardSource === source;
+                card.classList.toggle('library-filter-hidden', !visible);
+            });
+            setActiveButton(source);
+            updatePagination(1);
+        };
+
+        function updatePagination(page = 1) {
+            const visibleCards = Array.from(cards).filter(card => !card.classList.contains('library-filter-hidden'));
+            const pageSize = 9;
+            const totalPages = Math.max(1, Math.ceil(visibleCards.length / pageSize));
+            const pagination = document.querySelector('[data-library-pagination]');
+
+            const currentPage = Math.min(Math.max(1, page), totalPages);
+
+            cards.forEach((card) => {
+                if (card.classList.contains('library-filter-hidden')) {
+                    card.classList.add('d-none');
+                    return;
+                }
+                const index = visibleCards.indexOf(card);
+                const shouldShow = index >= (currentPage - 1) * pageSize && index < currentPage * pageSize;
+                card.classList.toggle('d-none', !shouldShow);
+            });
+
+            if (!pagination) {
+                return;
+            }
+
+            pagination.hidden = totalPages <= 1;
+            pagination.innerHTML = '';
+            if (totalPages <= 1) {
+                return;
+            }
+
+            const prevButton = document.createElement('button');
+            prevButton.type = 'button';
+            prevButton.className = 'pagination-button';
+            prevButton.textContent = 'Anterior';
+            prevButton.disabled = currentPage === 1;
+            prevButton.addEventListener('click', () => updatePagination(currentPage - 1));
+            pagination.appendChild(prevButton);
+
+            for (let i = 1; i <= totalPages; i += 1) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'pagination-button' + (i === currentPage ? ' active' : '');
+                button.textContent = String(i);
+                button.addEventListener('click', () => updatePagination(i));
+                pagination.appendChild(button);
+            }
+
+            const nextButton = document.createElement('button');
+            nextButton.type = 'button';
+            nextButton.className = 'pagination-button';
+            nextButton.textContent = 'Próximo';
+            nextButton.disabled = currentPage === totalPages;
+            nextButton.addEventListener('click', () => updatePagination(currentPage + 1));
+            pagination.appendChild(nextButton);
+        }
+
+        filterButtons.forEach((button) => {
+            button.addEventListener('click', () => applyFilter(button.dataset.libraryFilter || 'all'));
+        });
+
+        const initialFilter = new URLSearchParams(window.location.search).get('filtro');
+        if (initialFilter) {
+            applyFilter(initialFilter);
+        } else {
+            updatePagination(1);
+        }
+    }());
+</script>

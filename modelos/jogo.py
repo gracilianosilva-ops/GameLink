@@ -22,6 +22,13 @@ class Jogo(EntidadeBase):
         self.genero = genero
         self.desenvolvedora = desenvolvedora
         self.ano = ano
+        self.executavel = ''
+        self.caminho = ''
+        self.steam_appid = None
+        self.launcher = ''
+        self.capa_url = ''
+        self.banner_url = ''
+        self.ultima_sincronizacao = None
         self._categorias = [] # Lista de objetos Categoria
 
     def associar_categoria(self, categoria: Categoria):
