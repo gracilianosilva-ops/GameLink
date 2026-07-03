@@ -388,7 +388,7 @@
                             </div>
                             <div class="d-grid gap-2" id="steam-achievements-list">
                                 {% for conquista in steam_contexto.conquistas['achievements'] %}
-                                    <div class="d-flex align-items-center gap-3 p-2 bg-dark rounded border border-secondary" data-achievement-card>
+                                    <div class="d-flex align-items-center gap-3 p-2 bg-dark rounded border border-secondary">
                                         <img src="{{ conquista.icon }}" alt="{{ conquista.title }}" style="width: 44px; height: 44px; object-fit: cover; border-radius: 10px;">
                                         <div class="flex-grow-1">
                                             <p class="mb-1 fw-semibold small">{{ conquista.title }}</p>
@@ -398,7 +398,6 @@
                                     </div>
                                 {% endfor %}
                             </div>
-                            <div class="pagination-shell" data-achievement-pagination hidden></div>
                         </div>
                     </div>
                 {% elif steam_contexto.jogos %}
@@ -482,59 +481,6 @@
             });
         });
 
-        function setupAchievementPagination(pageSize = 6) {
-            const cards = Array.from(document.querySelectorAll('[data-achievement-card]'));
-            const pagination = document.querySelector('[data-achievement-pagination]');
-            if (!cards.length || !pagination) {
-                return;
-            }
-
-            let currentPage = 1;
-            const totalPages = Math.max(1, Math.ceil(cards.length / pageSize));
-
-            function renderPage(page) {
-                currentPage = Math.min(Math.max(1, page), totalPages);
-                cards.forEach((card, index) => {
-                    const show = index >= (currentPage - 1) * pageSize && index < currentPage * pageSize;
-                    card.classList.toggle('d-none', !show);
-                });
-
-                pagination.hidden = totalPages <= 1;
-                pagination.innerHTML = '';
-                if (totalPages <= 1) {
-                    return;
-                }
-
-                const prev = document.createElement('button');
-                prev.type = 'button';
-                prev.className = 'pagination-button';
-                prev.textContent = 'Anterior';
-                prev.disabled = currentPage === 1;
-                prev.addEventListener('click', () => renderPage(currentPage - 1));
-                pagination.appendChild(prev);
-
-                for (let i = 1; i <= totalPages; i += 1) {
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.className = 'pagination-button' + (i === currentPage ? ' active' : '');
-                    button.textContent = String(i);
-                    button.addEventListener('click', () => renderPage(i));
-                    pagination.appendChild(button);
-                }
-
-                const next = document.createElement('button');
-                next.type = 'button';
-                next.className = 'pagination-button';
-                next.textContent = 'Próximo';
-                next.disabled = currentPage === totalPages;
-                next.addEventListener('click', () => renderPage(currentPage + 1));
-                pagination.appendChild(next);
-            }
-
-            renderPage(1);
-        }
-
-        setupAchievementPagination();
         atualizarEstado();
     })();
 </script>

@@ -1,30 +1,225 @@
-<div id="game-activity-widget">
-    <div class="status">Nenhum jogo detectado</div>
+<div class="card bg-dark text-white p-3 border-secondary mb-3">
+    <h6 class="mb-3">🎮 Status de Jogo</h6>
+    {% if usuario.steam_id64 or usuario.hydra_current_game or hydra_local_ativa %}
+        <p class="mb-1 d-flex align-items-center gap-2">
+            <strong>Status:</strong>
+            <span id="steam-status-badge">
+                {% if usuario.steam_current_game %}
+                    <span class="badge bg-info">🎮 Ingame: {{ usuario.steam_current_game }}</span>
+                {% elif usuario.hydra_current_game %}
+                    <span class="badge bg-warning text-dark">⚡ Ingame: {{ usuario.hydra_current_game }}</span>
+                {% elif usuario.steam_online %}
+                    <span class="badge bg-success">● Na Steam</span>
+                {% elif hydra_local_ativa %}
+                    <span class="badge bg-warning text-dark">● No Hydra</span>
+                {% else %}
+                    <span class="badge bg-secondary">● Offline</span>
+                {% endif %}
+            </span>
+        </p>
+
+        {% if usuario.steam_last_update %}
+            <p class="mb-1 text-white-50 small" id="steam-last-update">Atualizado em: {{ usuario.steam_last_update }} <span id="steam-timer" class="ms-2 text-white-50"></span></p>
+        {% elif usuario.hydra_last_update %}
+            <p class="mb-1 text-white-50 small" id="steam-last-update">Hydra atualizado em: {{ usuario.hydra_last_update }} <span id="steam-timer" class="ms-2 text-white-50"></span></p>
+        {% else %}
+            <p class="mb-1 text-white-50 small" id="steam-last-update"><span id="steam-timer" class="ms-2 text-white-50"></span></p>
+        {% endif %}
+
+        {% if session.get('user_email') == usuario.email and usuario.steam_id64 %}
+            <div class="mt-2">
+                <button type="button" class="btn btn-outline-info btn-sm" onclick="sincronizarStatusSteam()">
+                    🔄 Sincronizar Status
+                </button>
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="alert alert-info mb-0" role="alert">
+            <p class="mb-2">🎮 <strong>Steam não conectada</strong></p>
+            <p class="small text-white-50 mb-2">Para ver seu status de jogo em tempo real, você precisa:</p>
+            <ol class="small text-white-50 mb-2">
+                <li>Deixar seu perfil Steam <strong>PÚBLICO</strong></li>
+                <li>Permitir que "Jogo em Progresso" seja visível <em>(Configurações → Privacidade)</em></li>
+                <li>Conectar sua Steam no GameLink</li>
+            </ol>
+            {% if session.get('user_email') == usuario.email %}
+                <a href="{{ url_for('editar_perfil') }}" class="btn btn-sm btn-info mt-2">Conectar Steam</a>
+            {% else %}
+                <small class="text-white-50">Aguarde o usuário conectar sua Steam.</small>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>
 
 <script>
-    async function fetchStatus() {
-        try {
-            const res = await fetch('/api/game-activity/status');
-            if (!res.ok) return;
-            const data = await res.json();
-            const el = document.getElementById('game-activity-widget');
-            if (!data) {
-                el.innerHTML = '<div class="status">Nenhum jogo ativo</div>';
-                return;
+function _atualizarUISteam(data) {
+    try {
+        const badgeContainer = document.getElementById('steam-status-badge');
+        const lastUpdateEl = document.getElementById('steam-last-update');
+        if (!badgeContainer) return;
+
+        // Estado novo prioriza Steam jogando, depois Hydra jogando, depois Steam online
+        const novo_estado = data.jogo ? 'playing' : (data.hydra_jogo ? 'hydra' : (data.online ? 'online' : 'offline'));
+        const novo_jogo = data.jogo || data.hydra_jogo || '';
+
+        console.log('[Steam UI Update]', { novo_estado, novo_jogo, data });
+
+        // Estado anterior
+        const estado_anterior = window._steam_current_state || null;
+        const jogo_anterior = window._steam_current_game || '';
+        const last_known_anterior = window._steam_last_known_update || null;
+
+        // Atualiza apenas se o estado/jogo mudarem — evita reset constante do temporizador
+        if (novo_estado !== estado_anterior || novo_jogo !== jogo_anterior) {
+            window._steam_current_state = novo_estado;
+            window._steam_current_game = novo_jogo;
+            if (data.atualizado_em) {
+                window._steam_last_known_update = data.atualizado_em;
             }
-            if (data.status === 'ingame') {
-                el.innerHTML = `<div class="status">Jogando: ${data.jogo}</div>`;
-            } else if (data.status === 'launcher') {
-                el.innerHTML = `<div class="status">Launcher ativo: ${data.launcher}</div>`;
-            } else {
-                el.innerHTML = '<div class="status">Nenhum jogo ativo</div>';
+        } else {
+            // mantém os valores anteriores
+            window._steam_current_state = estado_anterior;
+            window._steam_current_game = jogo_anterior;
+            window._steam_last_known_update = last_known_anterior;
+        }
+
+        let novoHTML = '';
+        if (data.jogo) {
+            novoHTML = `<span class="badge bg-info">🎮 Ingame: ${data.jogo}</span>`;
+        } else if (data.hydra_jogo) {
+            novoHTML = `<span class="badge bg-warning text-dark">⚡ Ingame: ${data.hydra_jogo}</span>`;
+        } else if (data.online) {
+            novoHTML = `<span class="badge bg-success">● Na Steam</span>`;
+        } else {
+            novoHTML = `<span class="badge bg-secondary">● Offline</span>`;
+        }
+        badgeContainer.innerHTML = novoHTML;
+
+        if (lastUpdateEl) {
+            const atualizadoTexto = window._steam_last_known_update ? window._steam_last_known_update : '';
+            lastUpdateEl.innerHTML = (atualizadoTexto ? ('Atualizado em: ' + atualizadoTexto) : '') + ' <span id="steam-timer" class="ms-2 text-white-50"></span>';
+        }
+
+        // Atualiza o timer imediatamente
+        atualizarTimerSteam();
+    } catch (e) {
+        console.error('Erro ao atualizar UI Steam:', e);
+    }
+}
+
+// Atualiza o temporizador que mostra quanto tempo passou desde a última sincronização
+function atualizarTimerSteam() {
+    try {
+        const timerEl = document.getElementById('steam-timer');
+        const lastIso = window._steam_last_known_update || null;
+        if (!timerEl) return;
+        if (!lastIso) {
+            timerEl.textContent = '';
+            return;
+        }
+        const then = new Date(lastIso);
+        if (!isFinite(then.getTime())) { timerEl.textContent = ''; return; }
+        const now = new Date();
+        const diff = Math.floor((now - then) / 1000);
+        const state = window._steam_current_state || 'offline';
+
+        if (state !== 'playing' && state !== 'online') {
+            timerEl.textContent = '';
+            return;
+        }
+
+        let prefix = '';
+        if (state === 'playing') prefix = '🎮 Jogando há ';
+        else prefix = '● Na Steam há ';
+
+        let text = '';
+        if (diff < 60) text = `${diff}s`;
+        else if (diff < 3600) text = `${Math.floor(diff/60)}m`;
+        else if (diff < 86400) text = `${Math.floor(diff/3600)}h`;
+        else text = `${Math.floor(diff/86400)}d`;
+
+        timerEl.textContent = `${prefix}${text}`;
+    } catch (e) {
+        console.error('Erro no timer Steam:', e);
+    }
+}
+
+function sincronizarStatusSteam() {
+    // evita concorrência de requisições
+    if (window._steam_sync_in_progress) return;
+    window._steam_sync_in_progress = true;
+    
+    console.log('[Steam Sync] Iniciando sincronização...');
+    
+    // Usa o endpoint /steam/sync-agora que força refresh com cache busting
+    fetch(`/steam/sync-agora?ts=${Date.now()}`, { cache: 'no-store' })
+        .then(response => response.json())
+        .then(data => {
+            try {
+                console.log('[Steam Sync] Resposta recebida:', data);
+                if (!data) return;
+                
+                // Atualiza a UI com os dados mais recentes; a função decide se atualiza o timestamp
+                _atualizarUISteam({
+                    jogo: data.jogo || '',
+                    hydra_jogo: data.hydra_jogo || '',
+                    online: data.online,
+                    atualizado_em: data.hydra_atualizado_em || data.atualizado_em
+                });
+            } finally {
+                window._steam_sync_in_progress = false;
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao sincronizar status:', error);
+            window._steam_sync_in_progress = false;
+        });
+}
+
+// Auto-sync: se o usuário tem Steam vinculada, sincroniza a cada 30s
+document.addEventListener('DOMContentLoaded', function () {
+    {% if usuario.steam_id64 %}
+        console.log('[Steam Init] Perfil carregado com Steam ID:', '{{ usuario.steam_id64 }}');
+        console.log('[Steam Init] Jogo inicial:', '{{ usuario.steam_current_game }}');
+        console.log('[Steam Init] Online:', '{{ usuario.steam_online }}');
+        
+        // Inicializa controles de concorrência e último update conhecido
+        window._steam_sync_in_progress = false;
+        // tenta ler o timestamp inicial do DOM
+        try {
+            const lastEl = document.getElementById('steam-last-update');
+            if (lastEl && lastEl.textContent) {
+                const m = lastEl.textContent.match(/Atualizado em:\s*(.*)/);
+                if (m && m[1]) {
+                    window._steam_last_known_update = new Date(m[1]).toISOString();
+                }
             }
         } catch (e) {
-            console.error(e);
+            window._steam_last_known_update = null;
         }
-    }
+        // Faz uma sincronização imediata e depois em intervalos
+        // usa schedulePolling para permitir alteração dinâmica de intervalo
+        sincronizarStatusSteam();
+        schedulePolling(2000);  // A cada 2 segundos para detectar mudanças rapidamente
+        // Atualiza o temporizador visual a cada segundo
+        if (!window._steam_timer_interval) {
+            window._steam_timer_interval = setInterval(atualizarTimerSteam, 1000);
+        }
+    {% endif %}
+});
+</script>
 
-    setInterval(fetchStatus, 2000);
-    fetchStatus();
+<script>
+// schedulePolling está definida abaixo do fetch handler; mas garantir que exista
+function schedulePolling(ms) {
+    try {
+        if (window._steam_poll_timer) {
+            clearInterval(window._steam_poll_timer);
+            window._steam_poll_timer = null;
+        }
+        window._steam_poll_timer = setInterval(sincronizarStatusSteam, ms);
+    } catch (e) {
+        console.error('Erro ao agendar polling Steam (fallback):', e);
+    }
+}
 </script>

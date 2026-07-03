@@ -94,7 +94,6 @@ CREATE TABLE IF NOT EXISTS biblioteca (
     tempo_jogado_horas INTEGER NOT NULL DEFAULT 0,
     concluido INTEGER NOT NULL DEFAULT 0,
     platinado INTEGER NOT NULL DEFAULT 0,
-    cover_url TEXT,
     UNIQUE(email_usuario, jogo_id),
     FOREIGN KEY(email_usuario) REFERENCES usuarios(email) ON DELETE CASCADE,
     FOREIGN KEY(jogo_id) REFERENCES jogos(id) ON DELETE CASCADE
@@ -196,29 +195,10 @@ def _ensure_usuario_columns(conn):
     conn.commit()
 
 
-def _ensure_biblioteca_columns(conn):
-    cursor = conn.cursor()
-    cursor.execute('PRAGMA table_info(biblioteca)')
-    existing_columns = {row[1] for row in cursor.fetchall()}
-
-    columns_to_add = [
-        ('cover_url', 'TEXT'),
-    ]
-
-    for column_name, column_type in columns_to_add:
-        if column_name not in existing_columns:
-            cursor.execute(
-                f'ALTER TABLE biblioteca ADD COLUMN {column_name} {column_type}'
-            )
-
-    conn.commit()
-
-
 def init_db():
     conn = get_connection()
     conn.executescript(SCHEMA)
     _ensure_usuario_columns(conn)
-    _ensure_biblioteca_columns(conn)
     conn.commit()
     conn.close()
 
@@ -376,7 +356,6 @@ def carregar_estado_persistido():
         item.tempo_jogado_horas = row['tempo_jogado_horas'] or 0
         item.concluido = bool(row['concluido'])
         item.platinado = bool(row['platinado'])
-        item.cover_url = row['cover_url'] or ''
         BIBLIOTECA_DB[f"{item.email_usuario}_{item.jogo_id}"] = item
 
     cursor.execute('SELECT * FROM reviews ORDER BY id ASC')
@@ -598,25 +577,15 @@ def persistir_biblioteca_item(item):
     conn = get_connection()
     conn.execute(
         '''
-        INSERT INTO biblioteca (id, email_usuario, jogo_id, data_adicao, tempo_jogado_horas, concluido, platinado, cover_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO biblioteca (id, email_usuario, jogo_id, data_adicao, tempo_jogado_horas, concluido, platinado)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(email_usuario, jogo_id) DO UPDATE SET
             data_adicao=excluded.data_adicao,
             tempo_jogado_horas=excluded.tempo_jogado_horas,
             concluido=excluded.concluido,
-            platinado=excluded.platinado,
-            cover_url=excluded.cover_url
+            platinado=excluded.platinado
         ''',
-        (
-            item.id,
-            item.email_usuario,
-            item.jogo_id,
-            _dt_to_db(item.data_adicao),
-            item.tempo_jogado_horas,
-            1 if item.concluido else 0,
-            1 if item.platinado else 0,
-            getattr(item, 'cover_url', '') or None,
-        ),
+        (item.id, item.email_usuario, item.jogo_id, _dt_to_db(item.data_adicao), item.tempo_jogado_horas, 1 if item.concluido else 0, 1 if item.platinado else 0),
     )
     conn.commit()
     conn.close()

@@ -1,5 +1,3 @@
-from typing import Optional
-
 from modelos.base import EntidadeBase
 from excecao import AutenticacaoError
 
@@ -75,7 +73,7 @@ class Usuario(EntidadeBase):
             return "Na Steam"
         return "Offline"
 
-    def obter_link_discord(self) -> Optional[str]:
+    def obter_link_discord(self) -> str | None:
         if not self.discord_server:
             return None
         if self.discord_server.startswith('http'):

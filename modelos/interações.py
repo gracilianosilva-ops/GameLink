@@ -50,7 +50,7 @@ class Feed:
         self.posts.append(post)
         return post
 
-    def get_post(self, post_id: int) -> Optional[Post]:
+    def get_post(self, post_id: int) -> Post | None:
         return next((post for post in self.posts if post.id == post_id), None)
 
     def like_post(self, post_id: int, user: str) -> bool:
@@ -69,7 +69,7 @@ class Feed:
         post.notifications.append(Notification(f"{user} não curtiu o post de {post.author}."))
         return True
 
-    def post_notifications(self, post_id: int) -> List[Notification]:
+    def post_notifications(self, post_id: int) -> list[Notification]:
         post = self.get_post(post_id)
         return post.notifications if post else []
 

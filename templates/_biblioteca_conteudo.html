@@ -5,38 +5,37 @@
                 <h5 class="mb-1">Biblioteca unificada</h5>
                 <p class="text-white-50 mb-0">Filtre jogos Steam, Hydra ou manuais em uma única lista.</p>
             </div>
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light btn-sm">🏠 Voltar ao painel</a>
-                <div data-library-filters>
-                    <button type="button" class="btn btn-outline-light btn-sm active" data-library-filter="all">Todos</button>
-                    <button type="button" class="btn btn-outline-info btn-sm" data-library-filter="steam">Steam</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm" data-library-filter="hydra">Hydra</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-library-filter="manual">Manual</button>
-                </div>
+            <div class="d-flex flex-wrap gap-2" data-library-filters>
+                <button type="button" class="btn btn-outline-light btn-sm active" data-library-filter="all">Todos</button>
+                <button type="button" class="btn btn-outline-info btn-sm" data-library-filter="steam">Steam</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-library-filter="hydra">Hydra</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-library-filter="manual">Manual</button>
             </div>
         </div>
     {% endif %}
 
     {% if steam_contexto and steam_contexto.configurado %}
-        <section class="mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="mb-4">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3 mb-3">
                 <div>
                     <p class="text-info text-uppercase small fw-bold mb-2">Meus Steam</p>
                     <h4 class="mb-2">🎮 Meus Steam</h4>
                     <p class="text-white-50 mb-0">Aqui serão exibidos seus jogos da Steam.</p>
                 </div>
-                <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#steamJogosSection" aria-expanded="true" aria-controls="steamJogosSection" data-section-toggle>
-                    <span class="toggle-icon">−</span> <span class="toggle-label">Minimizar</span>
-                </button>
+                <div class="d-flex flex-wrap gap-2">
+                    <form action="{{ url_for('importar_biblioteca_steam') }}" method="POST">
+                        <button type="submit" class="btn btn-success">Importar Steam para biblioteca local</button>
+                    </form>
+                    <a href="{{ url_for('perfil', email=session.get('user_email')) }}" class="btn btn-outline-info">Abrir perfil unificado</a>
+                </div>
             </div>
 
-            <div class="collapse show" id="steamJogosSection">
-                {% if steam_contexto.erro %}
-                    <div class="alert alert-warning">{{ steam_contexto.erro }}</div>
-                {% endif %}
+            {% if steam_contexto.erro %}
+                <div class="alert alert-warning">{{ steam_contexto.erro }}</div>
+            {% endif %}
 
-                <div class="row g-4 mb-2">
-                    {% for jogo_steam in steam_contexto.jogos %}
+            <div class="row g-4 mb-2">
+                {% for jogo_steam in steam_contexto.jogos %}
                     <div class="col-12 col-md-6 col-xl-4">
                         <a href="{{ url_for('perfil', email=session.get('user_email'), steam_appid=jogo_steam.appid) }}#steam-conquistas-section" class="library-card h-100 glow-card text-decoration-none d-block">
                             <div class="library-cover-wrap">
@@ -66,7 +65,6 @@
                 {% endfor %}
             </div>
         </div>
-        </section>
         <hr class="border-secondary my-4">
     {% elif steam_contexto and not steam_contexto.configurado %}
         <div class="empty-state-card p-3 mb-4">
@@ -76,21 +74,10 @@
     {% endif %}
 
     {% if biblioteca_cards %}
-        <section class="surface-panel p-4 mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div>
-                    <h5 class="mb-1">Jogos salvos</h5>
-                    <p class="text-white-50 mb-0">Gerencie sua coleção local com filtros rápidos.</p>
-                </div>
-                <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#bibliotecaCardsSection" aria-expanded="true" aria-controls="bibliotecaCardsSection" data-section-toggle>
-                    <span class="toggle-icon">−</span> <span class="toggle-label">Minimizar</span>
-                </button>
-            </div>
-            <div class="collapse show" id="bibliotecaCardsSection">
-                <div class="row g-4" data-library-grid>
-                    {% for card in biblioteca_cards %}
+        <div class="row g-4" data-library-grid>
+            {% for card in biblioteca_cards %}
                 {% set avaliacao_atual = card.item.avaliacao|default(0)|round(1) %}
-                <div class="col-12 col-md-6 col-xl-4{% if loop.index > 6 %} d-none more-library-card{% endif %}" data-library-card data-library-source="{{ card.origem }}">
+                <div class="col-12 col-md-6 col-xl-4" data-library-card data-library-source="{{ card.origem }}">
                     <div class="library-card h-100 glow-card">
                         <div class="library-cover-wrap">
                             <img src="{{ card.capa_url }}" alt="Capa de {{ card.jogo.titulo }}" class="library-cover" onerror='this.onerror=null;this.src={{ card.capa_fallback|tojson }};'>
@@ -160,13 +147,6 @@
                 </div>
             {% endfor %}
         </div>
-        {% if biblioteca_cards|length > 6 %}
-            <div class="mt-3 text-center">
-                <button type="button" class="btn btn-outline-info" data-show-more="biblioteca">Ver mais jogos</button>
-            </div>
-        {% endif %}
-        <div class="pagination-shell" data-library-pagination hidden></div>
-        </section>
     {% else %}
         <div class="empty-state-card">
             <h5 class="mb-2">📚 Adicione jogos Steam</h5>
@@ -195,65 +175,10 @@
             cards.forEach((card) => {
                 const cardSource = card.dataset.librarySource || 'manual';
                 const visible = source === 'all' || cardSource === source;
-                card.classList.toggle('library-filter-hidden', !visible);
+                card.classList.toggle('d-none', !visible);
             });
             setActiveButton(source);
-            updatePagination(1);
         };
-
-        function updatePagination(page = 1) {
-            const visibleCards = Array.from(cards).filter(card => !card.classList.contains('library-filter-hidden'));
-            const pageSize = 9;
-            const totalPages = Math.max(1, Math.ceil(visibleCards.length / pageSize));
-            const pagination = document.querySelector('[data-library-pagination]');
-
-            const currentPage = Math.min(Math.max(1, page), totalPages);
-
-            cards.forEach((card) => {
-                if (card.classList.contains('library-filter-hidden')) {
-                    card.classList.add('d-none');
-                    return;
-                }
-                const index = visibleCards.indexOf(card);
-                const shouldShow = index >= (currentPage - 1) * pageSize && index < currentPage * pageSize;
-                card.classList.toggle('d-none', !shouldShow);
-            });
-
-            if (!pagination) {
-                return;
-            }
-
-            pagination.hidden = totalPages <= 1;
-            pagination.innerHTML = '';
-            if (totalPages <= 1) {
-                return;
-            }
-
-            const prevButton = document.createElement('button');
-            prevButton.type = 'button';
-            prevButton.className = 'pagination-button';
-            prevButton.textContent = 'Anterior';
-            prevButton.disabled = currentPage === 1;
-            prevButton.addEventListener('click', () => updatePagination(currentPage - 1));
-            pagination.appendChild(prevButton);
-
-            for (let i = 1; i <= totalPages; i += 1) {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'pagination-button' + (i === currentPage ? ' active' : '');
-                button.textContent = String(i);
-                button.addEventListener('click', () => updatePagination(i));
-                pagination.appendChild(button);
-            }
-
-            const nextButton = document.createElement('button');
-            nextButton.type = 'button';
-            nextButton.className = 'pagination-button';
-            nextButton.textContent = 'Próximo';
-            nextButton.disabled = currentPage === totalPages;
-            nextButton.addEventListener('click', () => updatePagination(currentPage + 1));
-            pagination.appendChild(nextButton);
-        }
 
         filterButtons.forEach((button) => {
             button.addEventListener('click', () => applyFilter(button.dataset.libraryFilter || 'all'));
@@ -262,8 +187,6 @@
         const initialFilter = new URLSearchParams(window.location.search).get('filtro');
         if (initialFilter) {
             applyFilter(initialFilter);
-        } else {
-            updatePagination(1);
         }
     }());
 </script>

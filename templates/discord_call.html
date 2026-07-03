@@ -171,7 +171,6 @@
                 <h6 class="mb-0">Usuários na sala</h6>
                 <span class="badge bg-warning text-dark" data-call-count>{{ quantidade_participantes|default(participantes_ativos|length) }}</span>
             </div>
-            <div class="scroll-area">
             <div class="d-grid gap-2" data-call-participants>
                 {% for participante_ativo in participantes_ativos %}
                     <div class="participant-chip">
@@ -200,7 +199,6 @@
 
         <div class="mb-4">
             <h6 class="text-uppercase text-white-50 small fw-bold mb-3">Participantes sugeridos</h6>
-            <div class="scroll-area">
             <div class="d-grid gap-2">
                 {% for participante in participantes %}
                     <div class="participant-chip">
@@ -232,19 +230,6 @@
         <div class="discord-call-toolbar p-3 rounded-4">
             <h6 class="mb-2">Chat da call</h6>
             <p class="text-white-50 small mb-0">O chat e o compartilhamento de tela ficam dentro da própria sala. Use a barra do Jitsi para ativar essas funções durante a call.</p>
-        </div>
-
-        <div class="discord-call-toolbar p-3 rounded-4 mt-4">
-            <h6 class="mb-2">Soundboard rápido</h6>
-            <p class="text-white-50 small mb-2">Toque alertas rápidos durante a call.</p>
-            <div class="discord-soundboard">
-                <button type="button" class="btn btn-outline-info soundboard-button" onclick="playSound('ping')">Ping</button>
-                <button type="button" class="btn btn-outline-success soundboard-button" onclick="playSound('pop')">Pop</button>
-                <button type="button" class="btn btn-outline-warning soundboard-button" onclick="playSound('whoosh')">Whoosh</button>
-                <button type="button" class="btn btn-outline-danger soundboard-button" onclick="playSound('alert')">Alert</button>
-                <button type="button" class="btn btn-outline-secondary soundboard-button" onclick="playSound('tone')">Tone</button>
-                <button type="button" class="btn btn-outline-primary soundboard-button" onclick="playSound('chime')">Chime</button>
-            </div>
         </div>
     </aside>
 </div>
@@ -358,68 +343,13 @@
             .catch(() => {});
     }
 
-    function playSound(type) {
-        try {
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            if (!AudioContextClass) {
-                return;
-            }
-            const audioContext = new AudioContextClass();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            oscillator.type = 'sine';
-            const frequencies = {
-                ping: 880,
-                pop: 440,
-                whoosh: 260,
-                alert: 520,
-                tone: 660,
-                chime: 740,
-            };
-            oscillator.frequency.value = frequencies[type] || 520;
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.08, audioContext.currentTime + 0.02);
-            oscillator.start();
-            oscillator.stop(audioContext.currentTime + 0.25);
-            gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.25);
-            window.setTimeout(() => {
-                audioContext.close().catch(() => {});
-            }, 400);
-        } catch (error) {
-            console.debug('Soundboard unavailable', error);
-        }
-    }
-
     enviarPresencaCall();
     heartbeatTimer = window.setInterval(enviarPresencaCall, 15000);
     atualizarTempoCall();
     elapsedTimer = window.setInterval(atualizarTempoCall, 1000);
     atualizarStatusCall();
-    statusTimer = window.setInterval(atualizarStatusCall, 15000);
+    statusTimer = window.setInterval(atualizarStatusCall, 5000);
     window.addEventListener('beforeunload', sairDaCall);
     window.addEventListener('pagehide', sairDaCall);
-
-    document.addEventListener('visibilitychange', function () {
-        if (document.hidden) {
-            if (statusTimer) {
-                clearInterval(statusTimer);
-                statusTimer = null;
-            }
-            if (heartbeatTimer) {
-                clearInterval(heartbeatTimer);
-                heartbeatTimer = null;
-            }
-        } else {
-            if (!heartbeatTimer) {
-                heartbeatTimer = window.setInterval(enviarPresencaCall, 15000);
-            }
-            if (!statusTimer) {
-                statusTimer = window.setInterval(atualizarStatusCall, 15000);
-            }
-            atualizarStatusCall();
-        }
-    });
 </script>
 {% endblock %}

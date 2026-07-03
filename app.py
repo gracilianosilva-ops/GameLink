@@ -1,16 +1,4 @@
-from typing import Dict, List, Optional, Set, Tuple, Union
-from datetime import datetime
-from html import escape, unescape
-from html.parser import HTMLParser
-from urllib.parse import quote, urlencode, urlparse
-from urllib.request import Request, urlopen
-import secrets
-import smtplib
-from email.message import EmailMessage
-
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
-from werkzeug.utils import secure_filename
-from excecao import AutenticacaoError, OperacaoInvalidaError
 from modelos.usuario import Usuario, Admin, USUARIOS_DB
 from modelos.jogo import Jogo, Categoria, JOGOS_DB
 from modelos.posts import Post, Comentario, POSTS_DB, COMENTARIOS_POSTS_DB
@@ -19,18 +7,31 @@ from modelos.amigos_biblioteca import (
     GerenciadorNotificacoes, GerenciadorMensagens,
     AMIZADES_DB, BIBLIOTECA_DB, REVIEWS_DB, REVIEW_COMENTARIOS_DB, NOTIFICACOES_DB, MENSAGENS_DB
 )
-try:
-    import webview
-except Exception:
-    webview = None
+import json
+import os
+import re
+import subprocess
+import xml.etree.ElementTree as ET
+from difflib import SequenceMatcher
+from time import time
+from functools import lru_cache
+from html.parser import HTMLParser
+from html import escape, unescape
+from email.message import EmailMessage
+import smtplib
+from urllib.parse import quote, urlparse, urlencode
+from urllib.request import Request, urlopen
+from werkzeug.utils import secure_filename
+from datetime import datetime, timedelta
+import secrets
+from excecao import AutenticacaoError
 from database import (
     init_db,
     get_connection,
     carregar_estado_persistido,
+    persistir_usuario,
     persistir_categoria,
     persistir_jogo,
-    persistir_usuario,
-    persistir_biblioteca_item,
     remover_jogo,
     persistir_post,
     persistir_comentario_post,
@@ -39,6 +40,8 @@ from database import (
     persistir_post_like,
     persistir_amizade,
     remover_amizade,
+    persistir_biblioteca_item,
+    remover_biblioteca_item,
     persistir_review,
     persistir_review_comentario,
     marcar_review_visivel,
@@ -47,43 +50,22 @@ from database import (
     marcar_notificacao_lida,
     persistir_mensagem,
 )
-from servicos.game_activity_service import GameActivityService
-from threading import Thread
-import json
-import os
-import re
-import subprocess
-import xml.etree.ElementTree as ET
-from difflib import SequenceMatcher
-from threading import Thread
-from functools import lru_cache
 
-# create Flask app early so helper functions can reference it
 app = Flask(__name__)
 app.secret_key = "super_secret_key_gamelink"
 
-def iniciar_flask():
-    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+LOCAL_HOST = "127.0.0.1"
+LOCAL_PORT = 5000
+BASE_URL = f"http://{LOCAL_HOST}:{LOCAL_PORT}"
+app.config["SERVER_NAME"] = f"{LOCAL_HOST}:{LOCAL_PORT}"
 
-
-
-# Rastreamento de estado real (com cache temporário para evitar sobrecarga do Windows)
+# Rastreamento de estado real (não cache - validado sempre)
 _hydra_state_real = {
     'hydra_ativo': False,
-    'jogo': '',
-    'usuario': '',
+    'jogo_atual': '',
     'ultima_validacao': 0,
     'processos_detectados': [],
 }
-
-# Cache temporária de whitelist para Hydra
-_HYDRA_WHITELIST_CACHE = {
-    'whitelist': set(),
-    'updated_at': 0,
-}
-
-HYDRA_REAL_STATE_CACHE_TTL = 8
-HYDRA_WHITELIST_CACHE_TTL = 60
 
 # Bloqueio para evitar race conditions
 import threading
@@ -164,7 +146,7 @@ Se você não solicitou este cadastro, ignore esta mensagem.
     return True
 
 
-def _cadastro_pendente_valido() -> Optional[dict]:
+def _cadastro_pendente_valido() -> dict | None:
     pendente = session.get('cadastro_pendente')
     if not pendente:
         return None
@@ -425,7 +407,7 @@ def _normalizar_busca(texto: str) -> str:
     return re.sub(r'[^a-z0-9]+', ' ', (texto or '').lower()).strip()
 
 
-def _extrair_ano_texto(titulo: str) -> Optional[int]:
+def _extrair_ano_texto(titulo: str) -> int | None:
     correspondencia = re.search(r'\b(19\d{2}|20\d{2})\b', titulo or '')
     if not correspondencia:
         return None
@@ -462,7 +444,7 @@ def _buscar_html_com_user_agent(url: str, timeout: int = 10) -> str:
         return resposta.read().decode('utf-8', errors='replace')
 
 
-def _obter_slug_rawg(titulo: str, ano: Optional[int] = None) -> Optional[str]:
+def _obter_slug_rawg(titulo: str, ano: int | None = None) -> str | None:
     ano_detectado = ano if ano is not None else _extrair_ano_texto(titulo)
     titulo_base = _titulo_sem_ano(titulo)
 
@@ -495,200 +477,41 @@ def _obter_slug_rawg(titulo: str, ano: Optional[int] = None) -> Optional[str]:
     return melhor_slug
 
 
-def _buscar_json_com_user_agent(url: str, timeout: int = 10) -> Union[dict, list]:
-    request = Request(
-        url,
-        headers={
-            'User-Agent': 'GameLink/1.0',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-        },
-    )
-    with urlopen(request, timeout=timeout) as resposta:
-        return json.loads(resposta.read().decode('utf-8', errors='replace'))
-
-
-def _steam_store_search_appid(titulo: str) -> int | None:
-    titulo = (titulo or '').strip()
-    if not titulo:
-        return None
-
-    try:
-        query = quote(titulo)
-        url = f'https://store.steampowered.com/api/storesearch/?cc=us&l=english&term={query}&count=16'
-        dados = _buscar_json_com_user_agent(url, timeout=8)
-        items = dados.get('items') if isinstance(dados, dict) else None
-        if not items:
-            return None
-
-        titulo_normalizado = _normalizar_busca(titulo)
-        melhor = None
-        melhor_pontuacao = 0.0
-        for item in items:
-            nome = (item.get('name') or '').strip()
-            if not nome:
-                continue
-            nome_normalizado = _normalizar_busca(nome)
-            if not nome_normalizado:
-                continue
-
-            if nome_normalizado == titulo_normalizado:
-                return int(item.get('id') or 0) or None
-
-            similaridade = SequenceMatcher(None, titulo_normalizado, nome_normalizado).ratio()
-            if titulo_normalizado in nome_normalizado or nome_normalizado in titulo_normalizado:
-                similaridade += 0.10
-
-            if similaridade > melhor_pontuacao:
-                melhor_pontuacao = similaridade
-                melhor = item
-
-        if melhor and melhor_pontuacao >= 0.55:
-            return int(melhor.get('id') or 0) or None
-    except Exception:
-        pass
-
-    return None
-
-
-def _capa_steam_por_titulo(titulo: str) -> str | None:
-    appid = _steam_store_search_appid(titulo)
-    if appid:
-        return _capa_steam_jogo(appid)
-    return None
-
-
 def _obter_capa_rawg(titulo: str, ano: int | None = None) -> str | None:
     slug = _obter_slug_rawg(titulo, ano)
-    if slug:
-        try:
-            html = _buscar_html_com_user_agent(f'https://rawg.io/games/{slug}', timeout=10)
-            correspondencia = re.search(r'property="og:image" content="([^"]+)"', html, re.I)
-            if correspondencia:
-                return correspondencia.group(1)
-        except Exception:
-            pass
+    if not slug:
+        return None
 
-    # fallback: tente buscar direto pela API pública RAWG, com ou sem chave
-    try:
-        api_key = os.environ.get('RAWG_API_KEY', '').strip()
-        query = quote(titulo)
-        url = f'https://api.rawg.io/api/games?search={query}&page_size=3'
-        if api_key:
-            url += f'&key={quote(api_key)}'
-        dados = _buscar_json_com_user_agent(url, timeout=8)
-        jogos = dados.get('results') if isinstance(dados, dict) else None
-        if jogos:
-            for jogo_item in jogos:
-                capa = jogo_item.get('background_image') or jogo_item.get('background_image_additional')
-                if capa:
-                    return capa
-    except Exception:
-        pass
+    html = _buscar_html_com_user_agent(f'https://rawg.io/games/{slug}', timeout=10)
+    correspondencia = re.search(r'property="og:image" content="([^"]+)"', html, re.I)
+    if correspondencia:
+        return correspondencia.group(1)
 
     return None
-
-
-def _steam_url_existe(url: str, timeout: int = 5) -> bool:
-    try:
-        request = Request(
-            url,
-            method='HEAD',
-            headers={
-                'User-Agent': 'GameLink/1.0',
-                'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-            },
-        )
-        with urlopen(request, timeout=timeout) as resposta:
-            content_type = (resposta.getheader('Content-Type') or '').lower()
-            return resposta.status == 200 and content_type.startswith('image/')
-    except TypeError:
-        try:
-            request = Request(
-                url,
-                headers={
-                    'User-Agent': 'GameLink/1.0',
-                    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-                },
-            )
-            request.get_method = lambda: 'HEAD'
-            with urlopen(request, timeout=timeout) as resposta:
-                content_type = (resposta.getheader('Content-Type') or '').lower()
-                return resposta.status == 200 and content_type.startswith('image/')
-        except Exception:
-            return False
-    except Exception:
-        return False
 
 
 def _capa_steam_jogo(appid: int) -> str:
     if not appid:
         return ''
-
-    urls = [
-        f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg',
-        f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900_2x.jpg',
-        f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg',
-        f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/capsule_616x353.jpg',
-    ]
-
-    for url in urls:
-        if _steam_url_existe(url):
-            return url
-
-    try:
-        api_url = f'https://store.steampowered.com/api/appdetails?appids={appid}&cc=us&l=english'
-        dados = _buscar_json_com_user_agent(api_url, timeout=8)
-        entry = dados.get(str(appid)) if isinstance(dados, dict) else None
-        if isinstance(entry, dict) and entry.get('success'):
-            data = entry.get('data') or {}
-            header = data.get('header_image')
-            if header:
-                return header
-            background = data.get('background')
-            if background:
-                return background
-    except Exception:
-        pass
-
-    return ''
+    return f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg'
 
 
 def _capa_para_jogo_catalogo(jogo, usadas: set[str]) -> str:
     genero = (getattr(jogo, 'genero', '') or '').strip().lower()
     desenvolvedora = (getattr(jogo, 'desenvolvedora', '') or '').strip().lower()
-    titulo = getattr(jogo, 'titulo', '') or ''
-
-    capa = ''
     if genero == 'steam' or desenvolvedora == 'steam':
         capa = _capa_steam_jogo(int(getattr(jogo, 'id', 0) or 0))
         if capa:
             usadas.add(capa)
             return capa
 
-    capa_steam = _capa_steam_por_titulo(titulo)
-    if capa_steam:
-        usadas.add(capa_steam)
-        return capa_steam
-
-    capa_rawg = _obter_capa_rawg(titulo, getattr(jogo, 'ano', None))
-    if capa_rawg:
-        usadas.add(capa_rawg)
-        return capa_rawg
-
-    return _capa_unica_para_lista(titulo, getattr(jogo, 'ano', None), usadas)
+    return _capa_unica_para_lista(getattr(jogo, 'titulo', ''), getattr(jogo, 'ano', None), usadas)
 
 
 @lru_cache(maxsize=256)
 def obter_capa_jogo(titulo: str, ano: int | None = None) -> str:
     if not titulo:
         return _capa_fallback('Jogo')
-
-    try:
-        capa_steam = _capa_steam_por_titulo(titulo)
-        if capa_steam:
-            return capa_steam
-    except Exception:
-        pass
 
     try:
         capa_rawg = _obter_capa_rawg(titulo, ano)
@@ -737,18 +560,6 @@ def _hydra_token_local_detectado() -> str:
     return tokens[0] if tokens else ''
 
 
-def _hydra_read_log_tail(caminho: str, max_bytes: int = 4_000_000) -> str:
-    try:
-        with open(caminho, 'rb') as arquivo:
-            arquivo.seek(0, os.SEEK_END)
-            tamanho = arquivo.tell()
-            arquivo.seek(max(0, tamanho - max_bytes))
-            conteudo_bytes = arquivo.read()
-        return conteudo_bytes.decode('utf-8', errors='replace')
-    except OSError:
-        return ''
-
-
 def _hydra_tokens_locais_detectados() -> list[str]:
     if not HYDRA_APPDATA_DIR or not os.path.isdir(HYDRA_APPDATA_DIR):
         return []
@@ -756,6 +567,7 @@ def _hydra_tokens_locais_detectados() -> list[str]:
     candidatos = [
         os.path.join(HYDRA_APPDATA_DIR, 'hydra-db', '000005.ldb'),
         os.path.join(HYDRA_APPDATA_DIR, 'hydra-db', '000006.log'),
+        os.path.join(HYDRA_APPDATA_DIR, 'logs', 'network.txt'),
         os.path.join(HYDRA_APPDATA_DIR, 'logs', 'network.txt'),
         os.path.join(HYDRA_APPDATA_DIR, 'logs', 'info.txt'),
         os.path.join(HYDRA_APPDATA_DIR, 'logs', 'logs.txt'),
@@ -767,13 +579,11 @@ def _hydra_tokens_locais_detectados() -> list[str]:
         if not os.path.isfile(caminho):
             continue
 
-        conteudo = _hydra_read_log_tail(caminho) if caminho.endswith('.txt') else ''
-        if not conteudo:
-            try:
-                with open(caminho, 'r', encoding='utf-8', errors='replace') as arquivo:
-                    conteudo = arquivo.read()
-            except OSError:
-                continue
+        try:
+            with open(caminho, 'r', encoding='utf-8', errors='replace') as arquivo:
+                conteudo = arquivo.read()
+        except OSError:
+            continue
 
         padroes = (
             r'"accessToken"\s*:\s*"([^"]+)"',
@@ -797,125 +607,40 @@ def _hydra_tokens_locais_detectados() -> list[str]:
     return tokens_encontrados
 
 
-def _hydra_cache_local_owner() -> dict[str, str]:
-    owner = {}
-    if not HYDRA_APPDATA_DIR:
-        return owner
-
-    config_path = os.path.join(HYDRA_APPDATA_DIR, 'config.json')
-    if os.path.isfile(config_path):
-        try:
-            with open(config_path, 'r', encoding='utf-8', errors='replace') as arquivo:
-                config = json.load(arquivo)
-            user_details = config.get('userDetails') or {}
-            username = (user_details.get('username') or config.get('username') or '').strip()
-            email = (user_details.get('email') or config.get('email') or '').strip()
-            display_name = (user_details.get('displayName') or config.get('displayName') or '').strip()
-            if username:
-                owner['username'] = username
-            if email:
-                owner['email'] = email
-            if display_name:
-                owner['display_name'] = display_name
-        except Exception:
-            pass
-
-    caminho_log = os.path.join(HYDRA_APPDATA_DIR, 'logs', 'network.txt')
-    if os.path.isfile(caminho_log):
-        conteudo = _hydra_read_log_tail(caminho_log)
-        if conteudo:
-            if 'display_name' not in owner:
-                match = re.search(r"displayName\s*[:=]\s*['\"]([^'\"]+)['\"]", conteudo)
-                if match:
-                    owner['display_name'] = match.group(1).strip()
-
-            if 'username' not in owner:
-                match = re.search(r'"username"\s*:\s*"([^"]+)"', conteudo)
-                if match:
-                    owner['username'] = match.group(1).strip()
-
-            if 'email' not in owner:
-                match = re.search(r'"email"\s*:\s*"([^"]+)"', conteudo)
-                if match:
-                    owner['email'] = match.group(1).strip()
-
-    return owner
-
-
-def _hydra_cache_owner_mismatch(user, owner: dict[str, str]) -> bool:
-    if not owner or not user:
-        return False
-
-    usuario_hydra = _hydra_usuario_usuario(user)
-    email_hydra = _hydra_email_conta_usuario(user)
-    has_user_identity = bool(usuario_hydra or email_hydra)
-    has_owner_identity = bool(owner.get('username') or owner.get('email'))
-
-    if has_owner_identity and not has_user_identity:
-        return True
-
-    if owner.get('username') and usuario_hydra and owner['username'].strip().lower() != usuario_hydra.strip().lower():
-        return True
-    if owner.get('email') and email_hydra and owner['email'].strip().lower() != email_hydra.strip().lower():
-        return True
-
-    return False
-
-
-def _hydra_parse_hydra_game_segment(segment: str) -> dict | None:
-    object_id_match = re.search(r"objectId:\s*'([^']+)'", segment)
-    if not object_id_match:
-        return None
-
-    object_id = object_id_match.group(1).strip()
-    shop_match = re.search(r"shop:\s*'([^']+)'", segment)
-    title_match = re.search(r"title:\s*'([^']+)'", segment)
-    cover_match = re.search(r"coverImageUrl:\s*'([^']*)'", segment)
-    playtime_match = re.search(r"playTimeInSeconds:\s*([0-9]+)", segment)
-    achievements_match = re.search(r"achievementCount:\s*([0-9]+)", segment)
-    unlocked_match = re.search(r"unlockedAchievementCount:\s*([0-9]+)", segment)
-
-    if not shop_match or not title_match:
-        return None
-
-    return {
-        'objectId': object_id,
-        'shop': shop_match.group(1).strip(),
-        'title': title_match.group(1).strip(),
-        'cover_url': (cover_match.group(1).strip() if cover_match else ''),
-        'playTimeInSeconds': int(playtime_match.group(1) if playtime_match else 0),
-        'isPinned': False,
-        'isFavorite': False,
-        'achievements_unlocked': int(unlocked_match.group(1) if unlocked_match else 0),
-        'achievements_total': int(achievements_match.group(1) if achievements_match else 0),
-    }
-
-
 def _hydra_cache_local_jogos() -> tuple[list[dict], str]:
     caminho_log = os.path.join(HYDRA_APPDATA_DIR, 'logs', 'network.txt')
     if not os.path.isfile(caminho_log):
         return [], ''
 
-    conteudo = _hydra_read_log_tail(caminho_log, max_bytes=2_000_000)
-    if not conteudo:
+    try:
+        with open(caminho_log, 'r', encoding='utf-8', errors='replace') as arquivo:
+            conteudo = arquivo.read()
+    except OSError:
         return [], ''
 
     display_name = ''
-    match_display_name = re.search(r"displayName\s*[:=]\s*['\"]([^'\"]+)['\"]", conteudo)
+    match_display_name = re.search(r"displayName:\s*'([^']+)'", conteudo)
     if match_display_name:
         display_name = match_display_name.group(1).strip()
 
     jogos = []
-    object_positions = [m.start() for m in re.finditer(r"objectId:\s*'([^']+)'", conteudo)]
-    if not object_positions:
-        return [], display_name
+    padrao_jogo = re.compile(
+        r"objectId:\s*'(?P<objectId>[^']+)'.*?shop:\s*'(?P<shop>[^']+)'.*?title:\s*'(?P<title>[^']+)'.*?coverImageUrl:\s*'(?P<coverImageUrl>[^']*)'.*?playTimeInSeconds:\s*(?P<playTimeInSeconds>\d+).*?achievementCount:\s*(?P<achievementCount>\d+).*?unlockedAchievementCount:\s*(?P<unlockedAchievementCount>\d+)",
+        re.S,
+    )
 
-    object_positions.append(len(conteudo))
-    for index in range(len(object_positions) - 1):
-        segmento = conteudo[object_positions[index]:object_positions[index + 1]]
-        jogo = _hydra_parse_hydra_game_segment(segmento)
-        if jogo:
-            jogos.append(jogo)
+    for match in padrao_jogo.finditer(conteudo):
+        jogos.append({
+            'objectId': match.group('objectId').strip(),
+            'shop': match.group('shop').strip(),
+            'title': match.group('title').strip(),
+            'cover_url': match.group('coverImageUrl').strip(),
+            'playTimeInSeconds': int(match.group('playTimeInSeconds') or 0),
+            'isPinned': False,
+            'isFavorite': False,
+            'achievements_unlocked': int(match.group('unlockedAchievementCount') or 0),
+            'achievements_total': int(match.group('achievementCount') or 0),
+        })
 
     return jogos, display_name
 
@@ -961,16 +686,19 @@ def _hydra_get_running_processes() -> set[str]:
 
 def _hydra_obter_whitelist_executaveis() -> set[str]:
     """Extrai executáveis REAIS de jogos instalados.
-
-    Mantém cache temporário para evitar leituras repetidas da pasta e da biblioteca.
+    
+    ESTRATÉGIA DEFINITIVA:
+    1. Lê da pasta de jogos do Hydra (se existir)
+    2. Adiciona executáveis da biblioteca local (BIBLIOTECA_DB)
+    3. NUNCA retorna None - sempre retorna um set (vazio se necessário)
+    4. Rejeita ABSOLUTAMENTE tudo se não tiver confirmação de jogo
+    
+    Returns:
+        Set com executáveis em minúsculas (.exe incluído)
+        Vazio se nenhum jogo for encontrado (modo SUPER SEGURO)
     """
-    agora = time()
-    with _hydra_state_lock:
-        if agora - _HYDRA_WHITELIST_CACHE['updated_at'] < HYDRA_WHITELIST_CACHE_TTL:
-            return set(_HYDRA_WHITELIST_CACHE['whitelist'])
-
     whitelist = set()
-
+    
     # ESTRATÉGIA 1: Ler da pasta de jogos do Hydra
     try:
         games_dir = os.path.join(HYDRA_APPDATA_DIR, 'games')
@@ -987,6 +715,7 @@ def _hydra_obter_whitelist_executaveis() -> set[str]:
                                 exe = (meta.get('executable') or 
                                       meta.get('executablePath') or 
                                       meta.get('launchPath') or '').lower().strip()
+                                
                                 if exe and exe.endswith('.exe'):
                                     whitelist.add(exe)
                                     game_title = meta.get('title', pasta_jogo)
@@ -995,7 +724,7 @@ def _hydra_obter_whitelist_executaveis() -> set[str]:
                             print(f'[Hydra WHITELIST] Erro ao ler {meta_file}: {e}')
     except Exception as e:
         print(f'[Hydra WHITELIST] Erro ao ler pasta de jogos: {e}')
-
+    
     # ESTRATÉGIA 2: Adiciona executáveis da biblioteca local do GameLink
     try:
         if BIBLIOTECA_DB and isinstance(BIBLIOTECA_DB, dict):
@@ -1003,6 +732,7 @@ def _hydra_obter_whitelist_executaveis() -> set[str]:
             for game_id, item in BIBLIOTECA_DB.items():
                 try:
                     exe = None
+                    
                     if hasattr(item, 'executavel'):
                         exe = item.executavel
                     elif hasattr(item, 'executable'):
@@ -1011,10 +741,12 @@ def _hydra_obter_whitelist_executaveis() -> set[str]:
                         exe = item.launch_path
                     elif isinstance(item, dict):
                         exe = item.get('executavel') or item.get('executable')
+                    
                     if exe:
                         exe = str(exe).lower().strip()
                         if '\\' in exe or '/' in exe:
                             exe = os.path.basename(exe)
+                        
                         if exe and exe.endswith('.exe'):
                             whitelist.add(exe)
                             game_title = getattr(item, 'titulo', getattr(item, 'title', game_id))
@@ -1023,17 +755,14 @@ def _hydra_obter_whitelist_executaveis() -> set[str]:
                     print(f'[Hydra WHITELIST] Erro ao processar item {game_id}: {e}')
     except Exception as e:
         print(f'[Hydra WHITELIST] Erro ao ler BIBLIOTECA_DB: {e}')
-
-    with _hydra_state_lock:
-        _HYDRA_WHITELIST_CACHE['whitelist'] = set(whitelist)
-        _HYDRA_WHITELIST_CACHE['updated_at'] = agora
-
+    
     if not whitelist:
         print('[Hydra WHITELIST] AVISO: Nenhum jogo encontrado - modo SUPER SEGURO')
     else:
         print(f'[Hydra WHITELIST] OK Total de executaveis validos: {len(whitelist)}')
         for exe in sorted(whitelist)[:3]:
             print(f'[Hydra WHITELIST]    - {exe}')
+    
     return whitelist
 
 
@@ -1110,51 +839,69 @@ _BLACKLIST_PROCESSOS_SISTEMA = {
 }
 
 
-def _hydra_detect_running_game_real(processos_ativos: set[str] | None = None) -> str:
-    """Detecta jogo em execução NO HYDRA com validacao RIGOROSA.
-
-    Usa uma lista de processos já disponível para evitar leituras duplicadas do sistema.
+def _hydra_detect_running_game_real() -> str:
+    """Detecta jogo em execução NO HYDRA com validacao RIGOROSA (SEM CACHE).
+    
+    ARQUITETURA DEFINITIVA:
+    1. Obtém whitelist de jogos REAIS instalados
+    2. Obtém processos em execução
+    3. REJEITA TUDO na BLACKLIST de sistema
+    4. VALIDA contra a WHITELIST
+    5. SO retorna se confirmado como jogo
+    
+    Returns:
+        Nome do jogo ou string vazia ('')
     """
     # PASSO 1: Obter whitelist de jogos REAIS
     whitelist = _hydra_obter_whitelist_executaveis()
+    
+    # Se nao ha nenhum jogo instalado, nada a fazer
     if not whitelist:
         print('[Hydra DETECT] Info: Nenhum jogo instalado detectado')
         return ''
-
-    # PASSO 2: Obter processos em execucao se necessario
-    if processos_ativos is None:
-        processos_ativos = _hydra_get_running_processes()
-
+    
+    # PASSO 2: Obter processos em execucao
+    processos_ativos = _hydra_get_running_processes()
+    
     if not processos_ativos:
         print('[Hydra DETECT] Info: Nenhum processo ativo')
         return ''
-
+    
     print(f'[Hydra DETECT] Processos ativos: {len(processos_ativos)}')
     print(f'[Hydra DETECT] Whitelist de jogos: {len(whitelist)} itens')
-
+    
+    # PASSO 3: Filtrar BLACKLIST (primeira linha de defesa)
     print(f'[Hydra DETECT] Filtrando blacklist...')
-    processos_candidatos = {proc for proc in processos_ativos if proc not in _BLACKLIST_PROCESSOS_SISTEMA}
-    processos_rejeitados = processos_ativos - processos_candidatos
-
+    processos_candidatos = set()
+    processos_rejeitados = set()
+    
+    for proc in processos_ativos:
+        if proc in _BLACKLIST_PROCESSOS_SISTEMA:
+            processos_rejeitados.add(proc)
+            continue
+        processos_candidatos.add(proc)
+    
     if processos_rejeitados:
         print(f'[Hydra DETECT] Rejeitados pela blacklist: {len(processos_rejeitados)}')
         for proc in sorted(processos_rejeitados)[:3]:
             print(f'[Hydra DETECT]    - {proc}')
-
+    
     if not processos_candidatos:
         print(f'[Hydra DETECT] Nenhum candidato apos blacklist')
         return ''
-
+    
     print(f'[Hydra DETECT] Candidatos apos blacklist: {len(processos_candidatos)}')
+    
+    # PASSO 4: Validar contra WHITELIST
     print(f'[Hydra DETECT] Validando contra whitelist...')
     processos_validos = [p for p in processos_candidatos if p in whitelist]
-
+    
     if processos_validos:
         jogo_exe = processos_validos[0]
         jogo_nome = jogo_exe.replace('.exe', '').title()
         print(f'[Hydra DETECT] OK JOGO DETECTADO: "{jogo_nome}" (exe: {jogo_exe})')
         return jogo_nome
-
+    
     print(f'[Hydra DETECT] Nenhum processo corresponde a whitelist')
     return ''
 
@@ -1162,20 +909,59 @@ def _hydra_detect_running_game_real(processos_ativos: set[str] | None = None) ->
 
 
 def _hydra_local_ativo_real() -> bool:
-    """Verifica se Hydra REALMENTE está em execução.
-
-    Usa cache curto para reduzir leituras repetidas de processo enquanto mantém o estado recente.
+    """Verifica se Hydra REALMENTE está em execução (SEM CACHE).
+    
+    Sempre consulta o Windows para estado REAL.
+    
+    Returns:
+        True se Hydra está rodando, False caso contrário
     """
-    return _hydra_get_full_state_real()['hydra_ativo']
+    processos = _hydra_get_running_processes()
+    
+    # Procura por qualquer processo contendo 'hydra'
+    for proc in processos:
+        if 'hydra' in proc.lower():
+            print(f'[Hydra REAL] Hydra detectado: {proc}')
+            return True
+    
+    print(f'[Hydra REAL] Hydra NÃO está rodando')
+    return False
 
 
 def _hydra_get_full_state_real() -> dict:
-    """Retorna um estado Hydra seguro e rápido sem consultar o sistema local."""
-    return {
-        'hydra_ativo': False,
+    """Retorna ESTADO REAL COMPLETO do Hydra (SEM CACHE).
+    
+    Este é o ponto central de verdade para o estado do Hydra.
+    SEMPRE valida contra o sistema real.
+    NUNCA usa dados armazenados.
+    
+    Returns:
+        Dict com {'hydra_ativo': bool, 'jogo': str, 'usuario': str}
+    """
+    estado = {
+        'hydra_ativo': _hydra_local_ativo_real(),
         'jogo': '',
-        'usuario': '',
+        'usuario': ''
     }
+    
+    # Se Hydra não está ativo, não precisa procurar jogo
+    if not estado['hydra_ativo']:
+        return estado
+    
+    # Hydra está ativo, procura por jogo
+    estado['jogo'] = _hydra_detect_running_game_real()
+    
+    # Tenta obter nome de usuário
+    try:
+        config_path = os.path.join(HYDRA_APPDATA_DIR, 'config.json')
+        if os.path.isfile(config_path):
+            with open(config_path, 'r', encoding='utf-8', errors='replace') as f:
+                config = json.load(f)
+                estado['usuario'] = config.get('userDetails', {}).get('username', '').strip() or config.get('username', '').strip()
+    except Exception:
+        pass  # Silencioso
+    
+    return estado
 
 
 def _hydra_sincronizar_estado_real(user) -> None:
@@ -1523,7 +1309,6 @@ def importar_hydra_para_biblioteca_local(meu_email: str, exportacao_json: str) -
         item = GerenciadorBiblioteca.adicionar_jogo(novo_id_biblioteca, meu_email, jogo_catalogo.id)
         item.origem = 'hydra'
         item.codigo_origem = codigo_origem
-        item.cover_url = getattr(jogo_catalogo, 'capa_url', '') or _capa_para_jogo_catalogo(jogo_catalogo, set())
         item.tempo_jogado_horas = int(round((jogo_exportado['play_seconds'] or 0) / 3600))
         item.conquistas_desbloqueadas = int(jogo_exportado['conquistas_desbloqueadas'] or 0)
         item.conquistas_total = int(jogo_exportado['conquistas_total'] or 0)
@@ -1590,16 +1375,7 @@ def _hydra_importar_contexto_para_biblioteca_local(user, hydra_contexto: dict) -
             item = GerenciadorBiblioteca.adicionar_jogo(novo_id_biblioteca, user.email, jogo_catalogo.id)
         item.origem = 'hydra'
         item.codigo_origem = codigo_origem
-        item.cover_url = (
-            jogo_hydra.get('cover_url')
-            or jogo_hydra.get('libraryImageUrl')
-            or jogo_hydra.get('iconUrl')
-            or jogo_hydra.get('coverUrl')
-            or jogo_hydra.get('heroImageUrl')
-            or jogo_hydra.get('backgroundImageUrl')
-            or _hydra_normalizar_capa(jogo_hydra)
-            or ''
-        )
+        item.cover_url = (jogo_hydra.get('cover_url') or jogo_hydra.get('libraryImageUrl') or jogo_hydra.get('iconUrl') or '')
         item.tempo_jogado_horas = int(round((jogo_hydra.get('playTimeInSeconds') or 0) / 3600))
         item.conquistas_desbloqueadas = int(jogo_hydra.get('achievements_unlocked') or 0)
         item.conquistas_total = int(jogo_hydra.get('achievements_total') or 0)
@@ -1623,8 +1399,7 @@ def _hydra_normalizar_capa(jogo: dict) -> str:
 
 def _hydra_normalizar_jogos(jogos: list[dict]) -> list[dict]:
     resultados = []
-    vistos_ids = set()
-    vistos_titulos = set()
+    vistos = set()
 
     for jogo in jogos or []:
         if not isinstance(jogo, dict):
@@ -1635,12 +1410,9 @@ def _hydra_normalizar_jogos(jogos: list[dict]) -> list[dict]:
         if not object_id:
             object_id = titulo
 
-        titulo_normalizado = _normalizar_busca(titulo) or titulo.lower().strip()
-        if object_id in vistos_ids or titulo_normalizado in vistos_titulos:
+        if object_id in vistos:
             continue
-
-        vistos_ids.add(object_id)
-        vistos_titulos.add(titulo_normalizado)
+        vistos.add(object_id)
 
         tempo_jogado = int(jogo.get('playTimeInSeconds') or jogo.get('playtimeInSeconds') or jogo.get('play_time_in_seconds') or 0)
 
@@ -1648,7 +1420,6 @@ def _hydra_normalizar_jogos(jogos: list[dict]) -> list[dict]:
             'objectId': object_id,
             'shop': (jogo.get('shop') or 'hydra').strip() if isinstance(jogo.get('shop'), str) else 'hydra',
             'title': titulo,
-            'name': titulo,
             'playTimeInSeconds': tempo_jogado,
             'cover_url': _hydra_normalizar_capa(jogo),
             'isPinned': bool(jogo.get('isPinned')),
@@ -2603,27 +2374,6 @@ if not JOGOS_DB:
         USUARIOS_DB[admin.email.lower()] = admin
         persistir_usuario(admin)
 
-# --- Serviço de atividade de jogos ---
-GAME_ACTIVITY_SERVICE = GameActivityService()
-GAME_ACTIVITY_SERVICE.start()
-
-@app.route('/api/game-activity/status')
-def game_activity_status():
-    state = GAME_ACTIVITY_SERVICE.get_state()
-    return jsonify({
-        'status': state.get('status', 'in_app'),
-        'atividade': state.get('atividade', 'Explorando a biblioteca'),
-        'jogo': state.get('jogo', ''),
-        'launcher': state.get('launcher', 'Game Link'),
-        'executavel': state.get('executavel', ''),
-        'tempo_segundos': state.get('tempo_segundos', 0),
-        'online_segundos': state.get('online_segundos', 0),
-        'iniciado_em': state.get('iniciado_em'),
-        'ultimo_update': state.get('ultimo_update'),
-        'origem': state.get('origem', 'game_link'),
-        'jogo_id': state.get('jogo_id'),
-    })
-
 # --- Rotas de Autenticação ---
 @app.route('/')
 def index(): 
@@ -2717,7 +2467,6 @@ def login():
             session['user_nome'] = user.nome
             session['is_admin'] = isinstance(user, Admin)
             ONLINE_USERS.add(user.email)
-            session.permanent = True
             return redirect(url_for('dashboard'))
         flash("Credenciais inválidas.", "danger")
     return render_template('login.html')
@@ -2811,24 +2560,46 @@ def redefinir():
 def dashboard():
     if 'user_email' not in session: 
         return redirect(url_for('login'))
-
+    
     meu_email = session['user_email']
-
-    # Evita sincronizações e consultas externas no primeiro carregamento do dashboard.
-    # Isso mantém o fluxo de login rápido e sem travamentos.
+    # Sincroniza automaticamente o status Steam ao carregar o dashboard,
+    # mas somente se o usuário tiver `steam_id64` e o último update for antigo.
     try:
         user_for_sync = USUARIOS_DB.get(_normalizar_email(meu_email))
         if user_for_sync:
-            user_for_sync.hydra_last_update = user_for_sync.hydra_last_update or None
+            _hydra_atualizar_status_local(user_for_sync)
             persistir_usuario(user_for_sync)
+
+            if getattr(user_for_sync, 'steam_id64', ''):
+                should_sync = False
+                if not getattr(user_for_sync, 'steam_last_update', None):
+                    should_sync = True
+                else:
+                    try:
+                        last_dt = datetime.fromisoformat(user_for_sync.steam_last_update)
+                        if datetime.now() - last_dt > timedelta(seconds=60):
+                            should_sync = True
+                    except Exception:
+                        should_sync = True
+
+                if should_sync:
+                    try:
+                        sincronizar_status_steam(meu_email)
+                        # Recarrega o usuário do banco para obter dados sincronizados
+                        user_for_sync = USUARIOS_DB.get(_normalizar_email(meu_email))
+                        if user_for_sync:
+                            _hydra_atualizar_status_local(user_for_sync)
+                            persistir_usuario(user_for_sync)
+                            print(f'[Dashboard Init] Steam sincronizado para {meu_email}: online={user_for_sync.steam_online}, game="{user_for_sync.steam_current_game}", hydra="{user_for_sync.hydra_current_game}"')
+                    except Exception as e:
+                        print(f'[Dashboard Init] Erro ao sincronizar Steam: {e}')
     except Exception:
         pass
-
     jogos = list(JOGOS_DB.values())
+    capas_usadas: set[str] = set()
     for jogo in jogos:
+        jogo.capa_url = _capa_para_jogo_catalogo(jogo, capas_usadas)
         jogo.capa_fallback = _capa_fallback(jogo.titulo)
-        if not getattr(jogo, 'capa_url', None):
-            jogo.capa_url = jogo.capa_fallback
 
     posts_visiveis = {k: v for k, v in POSTS_DB.items() if v.visivel}
     comentarios_visiveis = [c for c in COMENTARIOS_POSTS_DB if c.visivel]
@@ -3158,18 +2929,9 @@ def hydra_detectar_sessao_local():
         flash('Usuário não encontrado.', 'danger')
         return redirect(url_for('hydra_conectar'))
 
-    cache_owner = _hydra_cache_local_owner()
-    if not cache_owner:
-        flash('Não encontrei cache local da Hydra neste PC.', 'warning')
-        return redirect(url_for('hydra_conectar'))
-
-    if _hydra_cache_owner_mismatch(user, cache_owner):
-        flash('O cache local da Hydra encontrado não corresponde ao usuário conectado. Verifique sua conta Hydra ou utilize outro PC.', 'warning')
-        return redirect(url_for('hydra_conectar'))
-
     jogos_cacheados, display_name_cacheado = _hydra_cache_local_jogos()
     if not jogos_cacheados:
-        flash('Não encontrei jogos no cache local da Hydra neste PC.', 'warning')
+        flash('Não encontrei cache local da Hydra neste PC.', 'warning')
         return redirect(url_for('hydra_conectar'))
 
     jogos_para_importar = _hydra_normalizar_jogos(jogos_cacheados)
@@ -3818,16 +3580,11 @@ def remover_amigo(email_amigo):
 @app.route('/biblioteca/adicionar/<int:jogo_id>')
 def adicionar_biblioteca(jogo_id):
     meu_email = session.get('user_email')
-    if not meu_email:
+    if not meu_email: 
         return redirect(url_for('login'))
     try:
-        jogo = JOGOS_DB.get(jogo_id)
-        if not jogo:
-            raise OperacaoInvalidaError('Jogo não encontrado no catálogo.')
-
         id_biblioteca = max([b.id for b in BIBLIOTECA_DB.values()], default=0) + 1
         item = GerenciadorBiblioteca.adicionar_jogo(id_biblioteca, meu_email, jogo_id)
-        item.cover_url = getattr(jogo, 'capa_url', '') or _capa_para_jogo_catalogo(jogo, set())
         persistir_biblioteca_item(item)
         flash("Jogo adicionado à biblioteca!", "success")
     except Exception as e:
@@ -4294,177 +4051,42 @@ def api_amigos(email):
             amigos_data.append({'email': amigo_email, 'nome': user.nome})
     return jsonify({'amigos': amigos_data})
 
-from threading import Thread
+from threading import Event, Thread
+import webbrowser
+
+try:
+    import webview
+except Exception as exc:
+    webview = None
+    WEBVIEW_IMPORT_ERROR = exc
+
+
 def iniciar_flask():
-    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+    app.run(host=LOCAL_HOST, port=LOCAL_PORT, debug=False, use_reloader=False)
+
 
 if __name__ == '__main__':
     Thread(target=iniciar_flask, daemon=True).start()
 
-    # Wait for the local Flask server to start accepting connections before
-    # creating the webview window. This prevents a black/empty window while
-    # the server boots.
-    import socket
-    import time
+    if webview is None:
+        print(f'Webview indisponível: {WEBVIEW_IMPORT_ERROR}')
+        print('Abrindo o navegador em vez disso...')
+        webbrowser.open(f'{BASE_URL}/login')
+    else:
+        try:
+            webview.create_window(
+                'Gamer Link',
+                f'{BASE_URL}/login',
+                width=1400,
+                height=900
+            )
+            webview.start()
+        except Exception as exc:
+            print(f'Não foi possível iniciar a janela desktop: {exc}')
+            print('Abrindo o navegador em vez disso...')
+            webbrowser.open(f'{BASE_URL}/login')
 
-    def wait_for_server(host: str, port: int, timeout: float = 5.0) -> bool:
-        deadline = time.time() + float(timeout)
-        while time.time() < deadline:
-            try:
-                with socket.create_connection((host, port), timeout=0.5):
-                    return True
-            except Exception:
-                time.sleep(0.1)
-        return False
-
-        url = 'http://127.0.0.1:5000/login'
-
-        # Create a small loading HTML to avoid a black window while the server boots.
-        loading_html = '''
-        <!doctype html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1">
-            <style>
-                html,body{height:100%;margin:0;background:#0b1220;color:#ddd;display:flex;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif}
-                .box{text-align:center}
-                .spinner{width:64px;height:64px;border:8px solid rgba(255,255,255,0.08);border-top-color:#38bdf8;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
-                @keyframes spin{to{transform:rotate(360deg)}}
-                .title{font-size:18px;margin-bottom:6px}
-                .sub{font-size:12px;color:#9ca3af}
-            </style>
-        </head>
-        <body>
-            <div class="box">
-                <div class="spinner"></div>
-                <div class="title">Game Link</div>
-                <div class="sub">Carregando, aguarde...</div>
-            </div>
-        </body>
-        </html>
-        '''
-
-        # If the environment forces browser mode, or pywebview fails to create a
-        # window (common on some systems), fall back to opening the default
-        # system browser.
-        # Prefer system browser on Windows by default (many pywebview backends
-        # on Windows can cause black/failed windows). Allow override via env var.
-        env_force = os.environ.get('GAME_LINK_FORCE_BROWSER', '').strip()
-        if env_force:
-            force_browser = env_force in {'1', 'true', 'True', 'yes'}
-        else:
-            force_browser = os.name == 'nt'
-
-        def open_browser_when_ready():
-            server_ready = wait_for_server('127.0.0.1', 5000, timeout=float(os.environ.get('GAME_LINK_SERVER_WAIT', '5')))
-            try:
-                import webbrowser
-                webbrowser.open(url)
-            except Exception:
-                pass
-
-        if force_browser or webview is None:
-            Thread(target=open_browser_when_ready, daemon=True).start()
-            print('[GameLink] Opening in system browser (forced by GAME_LINK_FORCE_BROWSER or webview unavailable).')
-        else:
-            try:
-                win = webview.create_window(
-                    'Gamer Link',
-                    html=loading_html,
-                    width=1400,
-                    height=900
-                )
-
-                def load_app_when_ready():
-                    server_ready = wait_for_server('127.0.0.1', 5000, timeout=float(os.environ.get('GAME_LINK_SERVER_WAIT', '5')))
-                    try:
-                        # load_url is safe to call even if server_ready is False; we still try to load.
-                        win.load_url(url)
-                    except Exception:
-                        try:
-                            # fallback: open the url via webview api
-                            if webview.windows:
-                                webview.windows[0].load_url(url)
-                        except Exception:
-                            # As last resort, open system browser
-                            import webbrowser
-                            webbrowser.open(url)
-
-                Thread(target=load_app_when_ready, daemon=True).start()
-
-                # Try multiple GUI backends to avoid a black/empty window on
-                # platforms where the default backend isn't available.
-                preferred = os.environ.get('GAME_LINK_WEBVIEW_GUI', '').strip()
-
-                def detect_webview2_runtime() -> bool:
-                    # Heuristic: look for msedgewebview2 executable in common Program Files paths
-                    candidates = [
-                        os.path.join(os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)'), 'Microsoft', 'EdgeWebView', 'Application', 'msedgewebview2.exe'),
-                        os.path.join(os.environ.get('PROGRAMFILES', 'C:\\Program Files'), 'Microsoft', 'EdgeWebView', 'Application', 'msedgewebview2.exe'),
-                        os.path.join(os.environ.get('PROGRAMFILES', 'C:\\Program Files'), 'Microsoft', 'EdgeWebView2', 'Application', 'msedgewebview2.exe'),
-                        os.path.join(os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)'), 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-                    ]
-                    for p in candidates:
-                        try:
-                            if p and os.path.exists(p):
-                                return True
-                        except Exception:
-                            continue
-                    return False
-
-                def detect_cef() -> bool:
-                    try:
-                        import cefpython3  # type: ignore
-                        return True
-                    except Exception:
-                        return False
-
-                def detect_qt() -> bool:
-                    try:
-                        import PyQt5  # type: ignore
-                        return True
-                    except Exception:
-                        try:
-                            import PySide2  # type: ignore
-                            return True
-                        except Exception:
-                            return False
-
-                webview2 = detect_webview2_runtime()
-                cef_ok = detect_cef()
-                qt_ok = detect_qt()
-
-                if preferred:
-                    gui_candidates = [g.strip() for g in preferred.split(',') if g.strip()]
-                else:
-                    # Prefer WebView2 (edgechromium) if available, else try other backends.
-                    gui_candidates = []
-                    if webview2:
-                        gui_candidates.extend(['edgechromium', 'edgehtml', 'mshtml'])
-                    else:
-                        gui_candidates.extend(['mshtml', 'edgehtml'])
-                    if cef_ok:
-                        gui_candidates.append('cef')
-                    if qt_ok:
-                        gui_candidates.append('qt')
-                    gui_candidates.append('gtk')
-                started = False
-                last_exc = None
-                for gui in gui_candidates:
-                    try:
-                        print(f'[GameLink] Trying webview GUI backend: {gui}')
-                        webview.start(gui=gui)
-                        started = True
-                        break
-                    except Exception as exc:
-                        last_exc = exc
-                        print(f'[GameLink] webview backend {gui} failed: {exc}')
-                        continue
-
-                if not started:
-                    print(f'[GameLink] All webview backends failed: {last_exc}. Falling back to system browser.')
-                    Thread(target=open_browser_when_ready, daemon=True).start()
-            except Exception as exc:
-                print(f'[GameLink] pywebview failed: {exc}. Falling back to system browser.')
-                Thread(target=open_browser_when_ready, daemon=True).start()
+    try:
+        Event().wait()
+    except KeyboardInterrupt:
+        print('Encerrando o servidor...')
