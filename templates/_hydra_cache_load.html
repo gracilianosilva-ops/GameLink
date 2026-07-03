@@ -1,0 +1,14 @@
+{% if hydra_local_ativa and session.get('user_email') %}
+<div class="alert alert-warning border-warning bg-dark text-white p-4 mb-4" role="alert">
+    <div class="d-flex align-items-start gap-3">
+        <div style="font-size: 2rem;">⚡</div>
+        <div class="flex-grow-1">
+            <h5 class="alert-heading mb-2">Exibe a biblioteca do cache local da Hydra</h5>
+            <p class="mb-3">Use o botão abaixo para importar os jogos do cache local da Hydra neste computador.</p>
+            <a href="{{ url_for('hydra_cache_load') }}" class="btn btn-warning">
+                Carregar cache Hydra
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}

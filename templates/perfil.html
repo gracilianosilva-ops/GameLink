@@ -388,10 +388,10 @@
                             </div>
                             <div class="d-grid gap-2" id="steam-achievements-list">
                                 {% for conquista in steam_contexto.conquistas['achievements'] %}
-                                    <div class="d-flex align-items-center gap-3 p-2 bg-dark rounded border border-secondary">
-                                        <img src="{{ conquista.icon }}" alt="{{ conquista.title }}" style="width: 44px; height: 44px; object-fit: cover; border-radius: 10px;">
+                                    <div class="d-flex align-items-center gap-3 p-3 bg-dark rounded border border-secondary">
+                                        <img src="{{ conquista.icon }}" alt="{{ conquista.title }}" class="achievement-icon">
                                         <div class="flex-grow-1">
-                                            <p class="mb-1 fw-semibold small">{{ conquista.title }}</p>
+                                            <p class="mb-1 fw-semibold">{{ conquista.title }}</p>
                                             <p class="text-white-50 small mb-0">{{ conquista.description or 'Sem descrição disponível.' }}</p>
                                         </div>
                                         <span class="badge {{ 'bg-success' if conquista.unlocked else 'bg-secondary' }}">{{ 'Desbloqueada' if conquista.unlocked else 'Bloqueada' }}</span>

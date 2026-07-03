@@ -22,6 +22,9 @@
         </div>
     </div>
 
+    {% set usuario_logado = usuarios.get(session.get('user_email')) %}
+    {% include '_hydra_cache_load.html' %}
+
     <div class="row g-4">
         <aside class="col-12 col-xl-3">
             <div class="sidebar-panel mb-4">

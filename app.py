@@ -2540,6 +2540,65 @@ def steam_callback():
 
     return redirect(url_for('perfil', email=meu_email))
 
+@app.route('/hydra_cache_load')
+def hydra_cache_load():
+    """Carrega o cache local do Hydra e importa para a biblioteca do usuário.
+    
+    Similar ao steam_callback, esta rota:
+    1. Verifica se Hydra está ativo localmente
+    2. Sincroniza o estado do Hydra
+    3. Importa jogos do cache local para a biblioteca
+    4. Redireciona para o perfil
+    """
+    meu_email = session.get('user_email')
+    if not meu_email:
+        return redirect(url_for('login'))
+
+    user = USUARIOS_DB.get(_normalizar_email(meu_email))
+    if not user:
+        flash('Usuário não encontrado.', 'danger')
+        return redirect(url_for('login'))
+
+    # Verifica se Hydra está ativo localmente
+    if not _hydra_local_ativo_real():
+        flash('Hydra não está em execução. Inicie o Hydra para sincronizar o cache.', 'warning')
+        return redirect(url_for('perfil', email=meu_email))
+
+    try:
+        # Sincroniza o estado real do Hydra
+        _hydra_sincronizar_estado_real(user)
+        persistir_usuario(user)
+        
+        # Obtém o contexto do Hydra (cache local)
+        hydra_contexto = montar_hydra_contexto(user)
+        
+        if not hydra_contexto.get('configurado'):
+            flash('Cache do Hydra não encontrado. Importe seus jogos do Hydra primeiro.', 'warning')
+            return redirect(url_for('perfil', email=meu_email))
+        
+        # Importa jogos do cache Hydra para a biblioteca local
+        jogos_importados, jogos_ja_existiam = _hydra_importar_contexto_para_biblioteca_local(user, hydra_contexto)
+        
+        if jogos_importados:
+            flash(f'✅ Hydra sincronizado com sucesso! {jogos_importados} jogo(s) foram importados para sua biblioteca.', 'success')
+        elif jogos_ja_existiam:
+            flash('✅ Hydra sincronizado! Sua biblioteca local já contém esses jogos.', 'info')
+        else:
+            flash('⚠️ Hydra sincronizado, mas nenhum jogo novo foi encontrado.', 'warning')
+        
+        # Recarrega o usuário do banco para obter dados sincronizados
+        user_updated = USUARIOS_DB.get(_normalizar_email(meu_email))
+        if user_updated:
+            _hydra_sincronizar_estado_real(user_updated)
+            persistir_usuario(user_updated)
+            print(f'[Hydra Cache Load] Sincronizado para {meu_email}: game="{user_updated.hydra_current_game}"')
+    
+    except Exception as e:
+        print(f'[Hydra Cache Load] Erro: {e}')
+        flash(f'Erro ao sincronizar cache do Hydra: {str(e)}', 'danger')
+    
+    return redirect(url_for('perfil', email=meu_email))
+
 @app.route('/redefinir', methods=['POST'])
 def redefinir():
     email = request.form['email']
