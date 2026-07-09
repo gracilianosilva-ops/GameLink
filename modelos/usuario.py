@@ -73,7 +73,7 @@ class Usuario(EntidadeBase):
             return "Na Steam"
         return "Offline"
 
-    def obter_link_discord(self) -> str | None:
+    def obter_link_discord(self) -> str:
         if not self.discord_server:
             return None
         if self.discord_server.startswith('http'):
