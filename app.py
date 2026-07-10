@@ -7,6 +7,7 @@ from modelos.amigos_biblioteca import (
     GerenciadorNotificacoes, GerenciadorMensagens,
     AMIZADES_DB, BIBLIOTECA_DB, REVIEWS_DB, REVIEW_COMENTARIOS_DB, NOTIFICACOES_DB, MENSAGENS_DB
 )
+from threading import Thread
 import json
 import os
 import re
@@ -24,7 +25,14 @@ from urllib.request import Request, urlopen
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import secrets
-from excecao import AutenticacaoError
+import sqlite3
+from excecao import GameLinkException, AutenticacaoError, OperacaoInvalidaError
+
+try:
+    import webview
+except Exception as exc:
+    webview = None
+    WEBVIEW_IMPORT_ERROR = exc
 from database import (
     init_db,
     get_connection,
@@ -53,11 +61,6 @@ from database import (
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key_gamelink"
-
-LOCAL_HOST = "127.0.0.1"
-LOCAL_PORT = 5000
-BASE_URL = f"http://{LOCAL_HOST}:{LOCAL_PORT}"
-app.config["SERVER_NAME"] = f"{LOCAL_HOST}:{LOCAL_PORT}"
 
 # Rastreamento de estado real (não cache - validado sempre)
 _hydra_state_real = {
@@ -146,7 +149,7 @@ Se você não solicitou este cadastro, ignore esta mensagem.
     return True
 
 
-def _cadastro_pendente_valido() -> dict:
+def _cadastro_pendente_valido() -> dict | None:
     pendente = session.get('cadastro_pendente')
     if not pendente:
         return None
@@ -407,7 +410,7 @@ def _normalizar_busca(texto: str) -> str:
     return re.sub(r'[^a-z0-9]+', ' ', (texto or '').lower()).strip()
 
 
-def _extrair_ano_texto(titulo: str) -> int:
+def _extrair_ano_texto(titulo: str) -> int | None:
     correspondencia = re.search(r'\b(19\d{2}|20\d{2})\b', titulo or '')
     if not correspondencia:
         return None
@@ -444,7 +447,7 @@ def _buscar_html_com_user_agent(url: str, timeout: int = 10) -> str:
         return resposta.read().decode('utf-8', errors='replace')
 
 
-def _obter_slug_rawg(titulo: str, ano: int) -> str:
+def _obter_slug_rawg(titulo: str, ano: int | None = None) -> str | None:
     ano_detectado = ano if ano is not None else _extrair_ano_texto(titulo)
     titulo_base = _titulo_sem_ano(titulo)
 
@@ -477,7 +480,7 @@ def _obter_slug_rawg(titulo: str, ano: int) -> str:
     return melhor_slug
 
 
-def _obter_capa_rawg(titulo: str, ano: int) -> str:
+def _obter_capa_rawg(titulo: str, ano: int | None = None) -> str | None:
     slug = _obter_slug_rawg(titulo, ano)
     if not slug:
         return None
@@ -496,7 +499,7 @@ def _capa_steam_jogo(appid: int) -> str:
     return f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg'
 
 
-def _capa_para_jogo_catalogo(jogo, usadas) -> str:
+def _capa_para_jogo_catalogo(jogo, usadas: set[str]) -> str:
     genero = (getattr(jogo, 'genero', '') or '').strip().lower()
     desenvolvedora = (getattr(jogo, 'desenvolvedora', '') or '').strip().lower()
     if genero == 'steam' or desenvolvedora == 'steam':
@@ -509,7 +512,7 @@ def _capa_para_jogo_catalogo(jogo, usadas) -> str:
 
 
 @lru_cache(maxsize=256)
-def obter_capa_jogo(titulo: str, ano: int) -> str:
+def obter_capa_jogo(titulo: str, ano: int | None = None) -> str:
     if not titulo:
         return _capa_fallback('Jogo')
 
@@ -523,7 +526,7 @@ def obter_capa_jogo(titulo: str, ano: int) -> str:
     return _capa_fallback(titulo)
 
 
-def _capa_unica_para_lista(titulo: str, ano, usadas) -> str:
+def _capa_unica_para_lista(titulo: str, ano: int | None, usadas: set[str]) -> str:
     capa = obter_capa_jogo(titulo, ano)
     if capa in usadas:
         capa = _capa_fallback(titulo)
@@ -539,7 +542,7 @@ def _steam_id_ou_vanity_usuario(user) -> str:
     return (getattr(user, 'steam_id64', '') or '').strip()
 
 
-def _hydra_fetch_json(url: str, extra_headers) -> dict:
+def _hydra_fetch_json(url: str, extra_headers: dict | None = None) -> dict | list:
     headers = {
         'User-Agent': 'GameLink/1.0',
         'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
@@ -560,7 +563,7 @@ def _hydra_token_local_detectado() -> str:
     return tokens[0] if tokens else ''
 
 
-def _hydra_tokens_locais_detectados() -> list:
+def _hydra_tokens_locais_detectados() -> list[str]:
     if not HYDRA_APPDATA_DIR or not os.path.isdir(HYDRA_APPDATA_DIR):
         return []
 
@@ -607,7 +610,7 @@ def _hydra_tokens_locais_detectados() -> list:
     return tokens_encontrados
 
 
-def _hydra_cache_local_jogos() -> tuple:
+def _hydra_cache_local_jogos() -> tuple[list[dict], str]:
     caminho_log = os.path.join(HYDRA_APPDATA_DIR, 'logs', 'network.txt')
     if not os.path.isfile(caminho_log):
         return [], ''
@@ -645,7 +648,7 @@ def _hydra_cache_local_jogos() -> tuple:
     return jogos, display_name
 
 
-def _hydra_get_running_processes() -> str:
+def _hydra_get_running_processes() -> set[str]:
     """Obtém lista de processos REAIS em execução no Windows (SEM CACHE).
     
     Esta função SEMPRE consulta o Windows para obter estado real.
@@ -684,7 +687,7 @@ def _hydra_get_running_processes() -> str:
         return set()
 
 
-def _hydra_obter_whitelist_executaveis() -> str:
+def _hydra_obter_whitelist_executaveis() -> set[str]:
     """Extrai executáveis REAIS de jogos instalados.
     
     ESTRATÉGIA DEFINITIVA:
@@ -1031,7 +1034,7 @@ def _hydra_token_usuario(user) -> str:
     return (getattr(user, 'hydra_token', '') or '').strip()
 
 
-def _hydra_fetch_autenticado_json(base_url: str, caminho: str, token: str) -> dict:
+def _hydra_fetch_autenticado_json(base_url: str, caminho: str, token: str) -> dict | list:
     return _hydra_fetch_json(
         f'{base_url}{caminho}',
         {'Authorization': f'Bearer {token}'}
@@ -1072,7 +1075,7 @@ def _hydra_ler_duracao_em_segundos(item: dict) -> int:
     return 0
 
 
-def _hydra_ler_conquistas_item(item: dict) -> tuple:
+def _hydra_ler_conquistas_item(item: dict) -> tuple[int, int]:
     conquistas = item.get('achievements') or item.get('achievement') or item.get('conquistas')
     desbloqueadas = 0
     total = 0
@@ -1127,7 +1130,7 @@ def _hydra_ler_conquistas_item(item: dict) -> tuple:
     return max(0, desbloqueadas), max(0, total)
 
 
-def _hydra_extrair_jogos_exportados(dados_exportados: dict) -> list:
+def _hydra_extrair_jogos_exportados(dados_exportados: dict | list) -> list[dict]:
     if isinstance(dados_exportados, list):
         itens = dados_exportados
     elif isinstance(dados_exportados, dict):
@@ -1252,7 +1255,7 @@ def _hydra_contexto_local(user) -> dict:
     }
 
 
-def importar_hydra_para_biblioteca_local(meu_email: str, exportacao_json: str) -> tuple:
+def importar_hydra_para_biblioteca_local(meu_email: str, exportacao_json: str) -> tuple[int, int, str | None]:
     user = USUARIOS_DB.get(meu_email)
     if not user:
         return 0, 0, 'Usuário não encontrado.'
@@ -1321,7 +1324,7 @@ def importar_hydra_para_biblioteca_local(meu_email: str, exportacao_json: str) -
     return 0, jogos_ja_existiam, 'Nenhum jogo novo foi importado da exportação Hydra.'
 
 
-def _hydra_importar_contexto_para_biblioteca_local(user, hydra_contexto: dict) -> tuple:
+def _hydra_importar_contexto_para_biblioteca_local(user, hydra_contexto: dict) -> tuple[int, int]:
     jogos = hydra_contexto.get('jogos') or []
     jogos_importados = 0
     jogos_ja_existiam = 0
@@ -1397,7 +1400,7 @@ def _hydra_normalizar_capa(jogo: dict) -> str:
     )
 
 
-def _hydra_normalizar_jogos(jogos: list) -> list:
+def _hydra_normalizar_jogos(jogos: list[dict]) -> list[dict]:
     resultados = []
     vistos = set()
 
@@ -1624,7 +1627,7 @@ def _steam_post_text(url: str, dados: dict) -> str:
         return resposta.read().decode('utf-8', errors='replace')
 
 
-def _steam_extrair_steamid_de_claimed_id(claimed_id: str) -> str:
+def _steam_extrair_steamid_de_claimed_id(claimed_id: str) -> str | None:
     correspondencia = re.search(r'/openid/id/(\d{17})$', claimed_id or '')
     if correspondencia:
         return correspondencia.group(1)
@@ -1654,7 +1657,7 @@ def _steam_verificar_resposta_openid(dados: dict) -> bool:
     return 'is_valid:true' in resposta.replace(' ', '').lower()
 
 
-def _steam_resolver_steamid(steam_id_ou_vanity: str, api_key: str) -> str:
+def _steam_resolver_steamid(steam_id_ou_vanity: str, api_key: str) -> str | None:
     texto = (steam_id_ou_vanity or '').strip()
     if not texto:
         return None
@@ -1769,7 +1772,7 @@ def _steam_most_played_games_publico(steam_id64: str) -> list:
 
 
 @lru_cache(maxsize=256)
-def _steam_achievements_jogo(steam_id64: str, api_key: str, appid: int) -> dict:
+def _steam_achievements_jogo(steam_id64: str, api_key: str, appid: int) -> dict | None:
     if not appid:
         return None
 
@@ -1820,7 +1823,7 @@ def _steam_achievements_jogo(steam_id64: str, api_key: str, appid: int) -> dict:
 
 
 @lru_cache(maxsize=256)
-def _steam_achievements_publico(steam_id64: str, appid: int) -> dict:
+def _steam_achievements_publico(steam_id64: str, appid: int) -> dict | None:
     if not steam_id64 or not appid:
         return None
 
@@ -2129,7 +2132,7 @@ def sincronizar_status_steam(user_email: str) -> None:
     print(f'[Sincronizar Steam] {user.email}: online={user.steam_online}, game="{user.steam_current_game}", appid={user.steam_current_game_appid}')
 
 
-def montar_steam_contexto(user, steam_appid: int) -> dict:
+def montar_steam_contexto(user, steam_appid: int | None = None) -> dict:
     steam_input = _steam_id_ou_vanity_usuario(user)
     api_key = _steam_api_key_usuario(user)
     steam_id64 = None
@@ -2256,7 +2259,7 @@ def _steam_jogo_para_catalogo(jogo_steam: dict) -> Jogo:
     return jogo
 
 
-def importar_steam_para_biblioteca_local(meu_email: str) -> tuple:
+def importar_steam_para_biblioteca_local(meu_email: str) -> tuple[int, int, str | None]:
     user = USUARIOS_DB.get(meu_email)
     if not user:
         return 0, 0, 'Usuário não encontrado.'
@@ -2540,65 +2543,6 @@ def steam_callback():
 
     return redirect(url_for('perfil', email=meu_email))
 
-@app.route('/hydra_cache_load')
-def hydra_cache_load():
-    """Carrega o cache local do Hydra e importa para a biblioteca do usuário.
-    
-    Similar ao steam_callback, esta rota:
-    1. Verifica se Hydra está ativo localmente
-    2. Sincroniza o estado do Hydra
-    3. Importa jogos do cache local para a biblioteca
-    4. Redireciona para o perfil
-    """
-    meu_email = session.get('user_email')
-    if not meu_email:
-        return redirect(url_for('login'))
-
-    user = USUARIOS_DB.get(_normalizar_email(meu_email))
-    if not user:
-        flash('Usuário não encontrado.', 'danger')
-        return redirect(url_for('login'))
-
-    # Verifica se Hydra está ativo localmente
-    if not _hydra_local_ativo_real():
-        flash('Hydra não está em execução. Inicie o Hydra para sincronizar o cache.', 'warning')
-        return redirect(url_for('perfil', email=meu_email))
-
-    try:
-        # Sincroniza o estado real do Hydra
-        _hydra_sincronizar_estado_real(user)
-        persistir_usuario(user)
-        
-        # Obtém o contexto do Hydra (cache local)
-        hydra_contexto = montar_hydra_contexto(user)
-        
-        if not hydra_contexto.get('configurado'):
-            flash('Cache do Hydra não encontrado. Importe seus jogos do Hydra primeiro.', 'warning')
-            return redirect(url_for('perfil', email=meu_email))
-        
-        # Importa jogos do cache Hydra para a biblioteca local
-        jogos_importados, jogos_ja_existiam = _hydra_importar_contexto_para_biblioteca_local(user, hydra_contexto)
-        
-        if jogos_importados:
-            flash(f'✅ Hydra sincronizado com sucesso! {jogos_importados} jogo(s) foram importados para sua biblioteca.', 'success')
-        elif jogos_ja_existiam:
-            flash('✅ Hydra sincronizado! Sua biblioteca local já contém esses jogos.', 'info')
-        else:
-            flash('⚠️ Hydra sincronizado, mas nenhum jogo novo foi encontrado.', 'warning')
-        
-        # Recarrega o usuário do banco para obter dados sincronizados
-        user_updated = USUARIOS_DB.get(_normalizar_email(meu_email))
-        if user_updated:
-            _hydra_sincronizar_estado_real(user_updated)
-            persistir_usuario(user_updated)
-            print(f'[Hydra Cache Load] Sincronizado para {meu_email}: game="{user_updated.hydra_current_game}"')
-    
-    except Exception as e:
-        print(f'[Hydra Cache Load] Erro: {e}')
-        flash(f'Erro ao sincronizar cache do Hydra: {str(e)}', 'danger')
-    
-    return redirect(url_for('perfil', email=meu_email))
-
 @app.route('/redefinir', methods=['POST'])
 def redefinir():
     email = request.form['email']
@@ -2613,6 +2557,20 @@ def redefinir():
         except AutenticacaoError as e:
             flash(str(e), "danger")
     return redirect(url_for('recuperar'))
+
+def paginar_itens(itens, pagina_atual, por_pagina=6):
+    itens = list(itens or [])
+    total = len(itens)
+    if total == 0:
+        return 1, 1, total, []
+
+    total_paginas = max(1, (total + por_pagina - 1) // por_pagina)
+    pagina = max(1, int(pagina_atual or 1))
+    pagina = min(pagina, total_paginas)
+    inicio = (pagina - 1) * por_pagina
+    fim = inicio + por_pagina
+    return pagina, total_paginas, total, itens[inicio:fim]
+
 
 # --- Rotas de Dashboard e Jogos ---
 @app.route('/dashboard')
@@ -2660,6 +2618,12 @@ def dashboard():
         jogo.capa_url = _capa_para_jogo_catalogo(jogo, capas_usadas)
         jogo.capa_fallback = _capa_fallback(jogo.titulo)
 
+    pagina_atual, total_paginas, total_jogos, jogos_pagina = paginar_itens(
+        jogos,
+        request.args.get('pagina', 1, type=int),
+        6,
+    )
+
     posts_visiveis = {k: v for k, v in POSTS_DB.items() if v.visivel}
     comentarios_visiveis = [c for c in COMENTARIOS_POSTS_DB if c.visivel]
     notif_list = GerenciadorNotificacoes.obter_notificacoes(meu_email)
@@ -2670,7 +2634,11 @@ def dashboard():
     
     return render_template(
         'dashboard.html', 
-        jogos=jogos, 
+        jogos=jogos,
+        jogos_pagina=jogos_pagina,
+        pagina_atual=pagina_atual,
+        total_paginas=total_paginas,
+        total_jogos=total_jogos,
         usuarios=USUARIOS_DB, 
         posts=posts_visiveis, 
         comentarios_posts=comentarios_visiveis, 
@@ -2739,6 +2707,12 @@ def busca():
         jogo.capa_url = _capa_para_jogo_catalogo(jogo, capas_usadas)
         jogo.capa_fallback = _capa_fallback(jogo.titulo)
 
+    pagina_atual, total_paginas, total_jogos, jogos_pagina = paginar_itens(
+        resultados,
+        request.args.get('pagina', 1, type=int),
+        6,
+    )
+
     posts_visiveis = {k: v for k, v in POSTS_DB.items() if v.visivel}
     comentarios_visiveis = [c for c in COMENTARIOS_POSTS_DB if c.visivel]
     notif_list = GerenciadorNotificacoes.obter_notificacoes(meu_email)
@@ -2749,6 +2723,10 @@ def busca():
     return render_template(
         'dashboard.html',
         jogos=resultados,
+        jogos_pagina=jogos_pagina,
+        pagina_atual=pagina_atual,
+        total_paginas=total_paginas,
+        total_jogos=total_jogos,
         usuarios=USUARIOS_DB,
         posts=posts_visiveis,
         comentarios_posts=comentarios_visiveis,
@@ -2760,7 +2738,8 @@ def busca():
         solicitacoes_pendentes=contexto_amigos['pendentes'],
         usuarios_sugeridos=contexto_amigos['sugeridos'],
         busca_termo=termo,
-        filtro_selecionado=filtro
+        filtro_selecionado=filtro,
+        modo_busca=True
     )
 
 # --- Funcionalidades de Rede Social ---
@@ -3710,57 +3689,13 @@ def importar_biblioteca_steam():
 @app.route('/biblioteca')
 def minha_biblioteca():
     meu_email = session.get('user_email')
-    if not meu_email:
+    if not meu_email: 
         return redirect(url_for('login'))
-
-    try:
-        biblioteca_cards = montar_biblioteca_cards(meu_email)
-        user_obj = USUARIOS_DB.get(_normalizar_email(meu_email))
-        steam_contexto = montar_steam_contexto(user_obj) if user_obj else None
-
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
-            return render_template(
-                '_biblioteca_conteudo.html',
-                biblioteca_cards=biblioteca_cards,
-                jogos=JOGOS_DB,
-                usuarios=USUARIOS_DB,
-                steam_contexto=steam_contexto,
-                biblioteca_erro=None,
-            )
-
-        return render_template(
-            'biblioteca.html',
-            biblioteca_cards=biblioteca_cards,
-            jogos=JOGOS_DB,
-            usuarios=USUARIOS_DB,
-            steam_contexto=steam_contexto,
-            biblioteca_erro=None,
-        )
-
-    except Exception as e:
-        # Evita 500 e mostra erro na página
-        err_msg = f"Erro ao carregar biblioteca: {str(e)}"
-        print('[Biblioteca] ' + err_msg)
-
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
-            return render_template(
-                '_biblioteca_conteudo.html',
-                biblioteca_cards=[],
-                jogos=JOGOS_DB,
-                usuarios=USUARIOS_DB,
-                steam_contexto=None,
-                biblioteca_erro=err_msg,
-            )
-
-        return render_template(
-            'biblioteca.html',
-            biblioteca_cards=[],
-            jogos=JOGOS_DB,
-            usuarios=USUARIOS_DB,
-            steam_contexto=None,
-            biblioteca_erro=err_msg,
-        ), 200
-
+    biblioteca_cards = montar_biblioteca_cards(meu_email)
+    steam_contexto = montar_steam_contexto(USUARIOS_DB.get(meu_email))
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
+        return render_template('_biblioteca_conteudo.html', biblioteca_cards=biblioteca_cards, jogos=JOGOS_DB, usuarios=USUARIOS_DB, steam_contexto=steam_contexto)
+    return render_template('biblioteca.html', biblioteca_cards=biblioteca_cards, jogos=JOGOS_DB, usuarios=USUARIOS_DB, steam_contexto=steam_contexto)
 
 # --- Rotas de Reviews ---
 @app.route('/jogo/<int:jogo_id>/review/novo', methods=['POST'])
@@ -4165,7 +4100,7 @@ except Exception as exc:
 
 
 def iniciar_flask():
-    app.run(host=LOCAL_HOST, port=LOCAL_PORT, debug=False, use_reloader=False)
+    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
 
 
 if __name__ == '__main__':
@@ -4174,12 +4109,12 @@ if __name__ == '__main__':
     if webview is None:
         print(f'Webview indisponível: {WEBVIEW_IMPORT_ERROR}')
         print('Abrindo o navegador em vez disso...')
-        webbrowser.open(f'{BASE_URL}/login')
+        webbrowser.open('http://127.0.0.1:5000/login')
     else:
         try:
             webview.create_window(
                 'Gamer Link',
-                f'{BASE_URL}/login',
+                'http://127.0.0.1:5000/login',
                 width=1400,
                 height=900
             )
@@ -4187,7 +4122,7 @@ if __name__ == '__main__':
         except Exception as exc:
             print(f'Não foi possível iniciar a janela desktop: {exc}')
             print('Abrindo o navegador em vez disso...')
-            webbrowser.open(f'{BASE_URL}/login')
+            webbrowser.open('http://127.0.0.1:5000/login')
 
     try:
         Event().wait()

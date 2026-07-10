@@ -1,5 +1,54 @@
 {% extends 'base.html' %}
 {% block content %}
+<style>
+    .btn-nav-games {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 60px;
+        height: 60px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+        border: 2px solid #0284c7;
+        color: white;
+        font-size: 32px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+        text-decoration: none;
+    }
+    .btn-nav-games:hover:not(.disabled) {
+        background: linear-gradient(135deg, #06b6d4 0%, #0284c7 100%);
+        transform: scale(1.1);
+        box-shadow: 0 6px 20px rgba(14, 165, 233, 0.5);
+    }
+    .btn-nav-games:active:not(.disabled) {
+        transform: scale(0.95);
+    }
+    .btn-nav-games.disabled {
+        background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+        border-color: #334155;
+        color: #94a3b8;
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+    .btn-nav-games:focus {
+        outline: 2px solid #0ea5e9;
+        outline-offset: 2px;
+    }
+    .games-navigation-top {
+        position: relative;
+        z-index: 10;
+        padding: 20px 0;
+        border-bottom: 1px solid rgba(14, 165, 233, 0.2);
+        margin-bottom: 20px;
+    }
+    .games-info {
+        text-align: center;
+        font-size: 14px;
+        letter-spacing: 0.5px;
+    }
+</style>
 <div class="dashboard-shell">
     <div class="hero-panel mb-4">
         <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
@@ -22,9 +71,6 @@
         </div>
     </div>
 
-    {% set usuario_logado = usuarios.get(session.get('user_email')) %}
-    {% include '_hydra_cache_load.html' %}
-
     <div class="row g-4">
         <aside class="col-12 col-xl-3">
             <div class="sidebar-panel mb-4">
@@ -42,7 +88,7 @@
                             <span class="badge bg-warning text-dark mt-2">Admin Boss</span>
                         {% endif %}
                     </div>
-                </div>
+              </div>
                 <div class="d-grid gap-2">
                     <a href="{{ url_for('dashboard') }}" class="btn btn-primary" data-open-tab="abajogos-tab" role="button">Explorar jogos</a>
                     <a href="{{ url_for('dashboard', foco='biblioteca') }}" class="btn btn-outline-light" data-open-tab="ababiblioteca-tab" role="button">Minha biblioteca</a>
@@ -180,8 +226,22 @@
                         </form>
                     </div>
 
+                    {% if total_paginas > 1 %}
+                    <div class="d-flex justify-content-between align-items-center games-navigation-top">
+                        <a href="{% if modo_busca %}{{ url_for('busca', termo=busca_termo or '', filtro=filtro_selecionado or 'titulo', pagina=pagina_atual - 1) }}{% else %}{{ url_for('dashboard', pagina=pagina_atual - 1) }}{% endif %}" class="btn-nav-games btn-prev {% if pagina_atual <= 1 %}disabled{% endif %}" aria-label="Página anterior">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                        <div class="text-white-50 games-info">
+                            Página <span class="fw-bold text-info">{{ pagina_atual }}</span> de <span class="fw-bold text-info">{{ total_paginas }}</span>
+                        </div>
+                        <a href="{% if modo_busca %}{{ url_for('busca', termo=busca_termo or '', filtro=filtro_selecionado or 'titulo', pagina=pagina_atual + 1) }}{% else %}{{ url_for('dashboard', pagina=pagina_atual + 1) }}{% endif %}" class="btn-nav-games btn-next {% if pagina_atual >= total_paginas %}disabled{% endif %}" aria-label="Próxima página">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </div>
+                    {% endif %}
+
                     <div class="row g-3">
-                        {% for jogo in jogos %}
+                        {% for jogo in jogos_pagina %}
                             <div class="col-12 col-md-6">
                                 <div class="game-card h-100">
                                     <div class="game-cover-wrap">
@@ -218,6 +278,36 @@
                             </div>
                         {% endfor %}
                     </div>
+
+                    <script>
+                        document.querySelectorAll('.btn-nav-games').forEach(btn => {
+                            btn.addEventListener('click', function(e) {
+                                if (this.classList.contains('disabled')) {
+                                    e.preventDefault();
+                                    return false;
+                                }
+                            });
+                        });
+
+                        const gamesNavigation = document.querySelector('.games-navigation-top');
+                        if (gamesNavigation) {
+                            const prevBtn = gamesNavigation.querySelector('.btn-prev');
+                            const nextBtn = gamesNavigation.querySelector('.btn-next');
+                            
+                            [prevBtn, nextBtn].forEach(btn => {
+                                if (btn && !btn.classList.contains('disabled')) {
+                                    btn.addEventListener('click', function() {
+                                        setTimeout(() => {
+                                            const cardSection = document.querySelector('.tab-pane.show.active .row.g-3');
+                                            if (cardSection) {
+                                                cardSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                            }
+                                        }, 100);
+                                    });
+                                }
+                            });
+                        }
+                    </script>
 
                 </section>
 
@@ -583,25 +673,6 @@
 
     .amigo-status-dot.is-offline {
         background: #64748b;
-    }
-
-    .amigo-status-item {
-        align-items: flex-start;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-    }
-
-    .amigo-status-item > .d-flex {
-        min-width: 0;
-    }
-
-    .amigo-status-item .d-flex > div {
-        min-width: 0;
-    }
-
-    .amigo-status-item small {
-        overflow-wrap: anywhere;
-        word-break: break-word;
     }
 
     .dashboard-tabs .nav-link {
