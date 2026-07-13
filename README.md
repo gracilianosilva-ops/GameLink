@@ -1,33 +1,244 @@
-**Visão Geral**
+# 🎮 GAME-LINK
 
-   O GameLink é uma rede social dedicada à comunidade de jogadores, focada no compartilhamento de experiências, mídias e construção de perfis focados em histórico de jogo. 
-   A plataforma permite que os utilizadores registrem as experiências dos seus jogos favoritos e interajam com outros jogadores com interesses semelhantes.
+> **Unifique sua biblioteca Steam e Hydra Launcher, conecte-se com amigos e viva uma experiência gamer completa em uma única plataforma.**
 
- **Como rodar e validar**
-*Instale o Flask via terminal:*
+## 🌐 Demonstração
 
-> pip install Flask
+> **Acesse a versão de demonstração (provisória):**  
+> **https://g271332f3r.pythonanywhere.com**
 
-*Execute o arquivo principal do sistema:*
+> ⚠️ **Aviso:** Esta é uma versão de testes hospedada no PythonAnywhere. Algumas funcionalidades podem estar em desenvolvimento ou apresentar instabilidades durante atualizações.
 
-> python app.py
+---
 
-*Para ativar a verificação por e-mail no cadastro, configure as variáveis abaixo antes de iniciar o app:*
+# 📖 Sobre o Projeto
 
-> MAIL_HOST
-> MAIL_PORT
-> MAIL_USERNAME
-> MAIL_PASSWORD
-> MAIL_FROM
-> MAIL_USE_TLS=1
-> MAIL_USE_SSL=0
+O **GAME-LINK** é uma plataforma social desenvolvida para centralizar a experiência dos jogadores em um único ambiente.
 
-*Você também pode criar um arquivo `.env` na raiz do projeto com essas variáveis; o `app.py` passa a carregá-lo automaticamente ao iniciar.*
+A plataforma permite unificar bibliotecas de jogos da **Steam** e do **Hydra Launcher**, oferecendo também recursos de rede social para que jogadores possam compartilhar experiências, interagir com amigos e organizar sua coleção de jogos de forma simples e intuitiva.
 
-*Se essas variáveis não forem configuradas, o sistema entra em modo local de teste e mostra o código de verificação na tela do cadastro.*
+Mais do que um catálogo de jogos, o GAME-LINK busca se tornar um verdadeiro ecossistema gamer, reunindo biblioteca, comunicação e interação social em uma única plataforma.
 
-*Ou inicialize apenas a base de dados antes de rodar o app:*
+---
 
-> python database.py
+# 🎯 Objetivos
 
-*Abra http://127.0.0.1:5000 no seu navegador.*
+O GAME-LINK foi criado para resolver um problema comum entre jogadores: a necessidade de utilizar diversos programas para acessar jogos e interagir com amigos.
+
+O projeto busca centralizar informações provenientes de diferentes serviços, como:
+
+- Steam
+- Hydra Launcher
+- Discord
+- Redes sociais
+- Outros launchers
+
+Assim, o usuário pode gerenciar sua biblioteca e sua experiência gamer em um único lugar.
+
+---
+
+# ✨ Principais Funcionalidades
+
+## 👤 Sistema de Usuários
+
+- Cadastro
+- Login seguro
+- Recuperação de senha
+- Perfil personalizado
+- Foto de perfil
+- Biografia
+- Edição completa do perfil
+
+---
+
+## 🎮 Biblioteca de Jogos
+
+Visualize sua coleção em uma interface moderna.
+
+Cada jogo pode apresentar:
+
+- Capa
+- Nome
+- Descrição
+- Horas jogadas
+- Plataforma de origem
+- Avaliações
+- Informações adicionais
+
+---
+
+## 🔗 Integração com Steam
+
+Após conectar sua conta Steam, o GAME-LINK pode:
+
+- Exibir sua biblioteca Steam
+- Mostrar capas dos jogos
+- Exibir horas jogadas
+- Mostrar conquistas (quando disponíveis)
+- Detectar o jogo em execução
+- Informar status online
+- Iniciar jogos diretamente pela Steam
+
+---
+
+## 🚀 Integração com Hydra Launcher
+
+O GAME-LINK também integra a biblioteca do Hydra Launcher.
+
+Recursos disponíveis:
+
+- Importação automática dos jogos instalados
+- Leitura do Hydra Cache
+- Organização da biblioteca
+- Identificação de executáveis
+- Inicialização dos jogos diretamente pela plataforma
+
+---
+
+## 📚 Biblioteca Unificada
+
+Este é o principal diferencial do GAME-LINK.
+
+A plataforma reúne os jogos da **Steam** e do **Hydra Launcher** em uma única biblioteca.
+
+Cada jogo informa sua plataforma de origem, facilitando a organização e proporcionando uma experiência unificada ao jogador.
+
+---
+
+## 💬 Rede Social Gamer
+
+Os usuários podem interagir através de:
+
+- Publicações
+- Curtidas
+- Comentários
+- Sistema de amizades
+- Notificações
+- Perfis personalizados
+
+---
+
+## 🎙 Chamadas em Tempo Real
+
+O GAME-LINK utiliza a **Jitsi Meet API (Open Source)** para oferecer comunicação entre jogadores diretamente pela plataforma.
+
+Recursos disponíveis:
+
+- Chamadas de voz
+- Chamadas de vídeo
+- Salas privadas
+- Chamadas em grupo
+- Compartilhamento de tela
+- Controle de microfone e câmera
+
+A integração com a Jitsi Meet API permite oferecer chamadas de alta qualidade utilizando uma solução open source consolidada.
+
+---
+
+## ⭐ Avaliações
+
+Os usuários podem:
+
+- Avaliar jogos
+- Escrever análises
+- Compartilhar opiniões
+- Visualizar avaliações da comunidade
+
+---
+
+## 📊 Dashboard
+
+A tela principal reúne:
+
+- Biblioteca
+- Jogos recentes
+- Amigos online
+- Estatísticas
+- Atividade recente
+- Resumo da conta
+
+---
+
+# 🛠 Tecnologias Utilizadas
+
+### Backend
+
+- Python
+- Flask
+- SQLite
+- SQLAlchemy
+
+### Frontend
+
+- HTML5
+- CSS3
+- JavaScript
+
+### Integrações
+
+- Steam (Perfil Público)
+- Hydra Launcher (Cache Local)
+- Jitsi Meet API (Open Source)
+
+---
+
+## 🚧 Em Desenvolvimento
+
+- Melhor sincronização com Steam
+- Melhor leitura do Hydra Cache
+- Chat em tempo real
+- Launcher Manager
+- Sistema de recomendações
+- Feed inteligente
+- Sistema de conquistas
+- Estatísticas avançadas
+- Melhorias gerais de desempenho
+- Reforço da segurança da plataforma
+
+---
+
+## 💡 Futuras Funcionalidades
+
+- Aplicativo Android
+- Integração com novos launchers
+
+---
+
+# 🎯 Público-Alvo
+
+O GAME-LINK foi desenvolvido para:
+
+- Jogadores casuais
+- Jogadores competitivos
+- Colecionadores
+- Criadores de conteúdo
+- Comunidades gamers
+
+---
+
+# 👥 Autores
+
+Este projeto foi idealizado e desenvolvido por:
+
+- **Graciliano Alves**
+- **Robert Vinicius**
+
+---
+
+## 🤝 Colaboração
+
+O GAME-LINK é um projeto colaborativo criado com o objetivo de unificar bibliotecas de jogos, integrar diferentes launchers e oferecer recursos sociais voltados à comunidade gamer.
+
+O projeto está em constante evolução, buscando proporcionar uma experiência moderna, intuitiva e integrada para jogadores de diferentes plataformas.
+
+---
+
+# ⭐ Visão do Projeto
+
+O **GAME-LINK** nasceu para ser mais do que uma rede social ou um simples catálogo de jogos.
+
+Seu principal objetivo é oferecer uma plataforma capaz de reunir diferentes bibliotecas de jogos em um único ambiente, permitindo que os usuários visualizem seus títulos da **Steam** e do **Hydra Launcher**, iniciem jogos diretamente pela plataforma, conversem com amigos, compartilhem experiências e descubram novos jogos.
+
+Com a integração da **Jitsi Meet API**, o GAME-LINK também oferece chamadas de voz e vídeo, tornando possível que amigos joguem e conversem sem sair da plataforma.
+
+Nosso objetivo é transformar o GAME-LINK em uma referência na integração de bibliotecas, recursos sociais e gerenciamento da experiência gamer, oferecendo uma plataforma moderna, intuitiva e colaborativa para jogadores de diferentes ecossistemas.
