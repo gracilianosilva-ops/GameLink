@@ -87,11 +87,17 @@ O GAME-LINK também integra a biblioteca do Hydra Launcher.
 
 Recursos disponíveis:
 
-- Importação automática dos jogos instalados
+- visualização da bibilioteca unificado ou seprado hydra/steam
 - Leitura do Hydra Cache
 - Organização da biblioteca
-- Identificação de executáveis
-- Inicialização dos jogos diretamente pela plataforma
+- Entral em call
+- Avalivar jogos
+- enviar mensangens para amigos
+- recursos de amizade
+- posts
+- trocar foto de perfil
+- visualizar conquistas steam
+- status ingame
 
 ---
 
@@ -199,8 +205,9 @@ A tela principal reúne:
 
 ## 💡 Futuras Funcionalidades
 
-- Aplicativo Android
 - Integração com novos launchers
+- Iiniciar jogos pelo proprio site
+- adcionar o executavel de jogo HYDRA
 
 ---
 
