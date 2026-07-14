@@ -45,9 +45,11 @@ Assim, o usuário pode gerenciar sua biblioteca e sua experiência gamer em um �
 - Login seguro
 - Recuperação de senha
 - Perfil personalizado
-- Foto de perfil
+-  alteração Foto de perfil
 - Biografia
 - Edição completa do perfil
+- busca de outros usuarios
+  
 
 ---
 
