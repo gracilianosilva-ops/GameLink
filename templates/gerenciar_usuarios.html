@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="mb-1">Gerenciar Usuários</h2>
+            <p class="text-white-50 mb-0">Visualize todos os usuários cadastrados e remova contas de forma segura.</p>
+        </div>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light">Voltar ao dashboard</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} mb-4">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row g-4">
+        {% for usuario in usuarios %}
+            <div class="col-12 col-lg-6">
+                <div class="surface-panel p-4 h-100 d-flex flex-column gap-3">
+                    <div class="d-flex gap-3 align-items-center w-100">
+                        {% if usuario.avatar_url %}
+                            <img src="{{ usuario.avatar_url }}" alt="Foto de {{ usuario.nome }}" class="avatar-circle avatar-image">
+                        {% else %}
+                            <div class="avatar-circle bg-dark text-info">{{ usuario.nome[:1] }}</div>
+                        {% endif %}
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                <h5 class="mb-0 text-break">{{ usuario.nome }}</h5>
+                                <span class="badge bg-dark border border-info text-info small">{{ usuario.nickname }}</span>
+                                {% if usuario.is_admin %}
+                                    <span class="badge bg-warning text-dark">Admin</span>
+                                {% endif %}
+                            </div>
+                            <p class="text-white-50 small mb-1 text-break">{{ usuario.email }}</p>
+                            <div class="d-flex flex-wrap gap-2 text-white-50 small">
+                                <span>{{ usuario.jogos_count }} jogos</span>
+                                <span>{{ usuario.amigos_count }} amigos</span>
+                                <span>{{ usuario.status }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 text-white-50 small">
+                        <div class="col-12 col-md-6">
+                            <strong class="text-white d-block">Cadastro</strong>
+                            <span>{{ usuario.data_cadastro }}</span>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <strong class="text-white d-block">Email</strong>
+                            <span>{{ usuario.email }}</span>
+                        </div>
+                    </div>
+
+                    {% if not usuario.is_admin and usuario.email != session_email %}
+                        <button type="button" class="btn btn-outline-danger mt-auto" data-bs-toggle="modal" data-bs-target="#modalExcluir{{ loop.index }}">🗑 Excluir Usuário</button>
+                        <div class="modal fade" id="modalExcluir{{ loop.index }}" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content bg-dark text-white border-secondary">
+                                    <div class="modal-header border-secondary">
+                                        <h5 class="modal-title">Confirmar exclusão</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <p class="mb-0">Tem certeza que deseja excluir este usuário? Esta ação remove dados relacionados de forma permanente.</p>
+                                    </div>
+                                    <div class="modal-footer border-secondary">
+                                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
+                                        <form action="{{ url_for('excluir_usuario', email=usuario.email) }}" method="POST">
+                                            <button type="submit" class="btn btn-danger">Excluir</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <div class="col-12">
+                <div class="empty-state-card p-4">Nenhum usuário encontrado.</div>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -104,6 +104,7 @@
                         <div class="surface-panel p-3">
                             <div class="d-grid gap-2 mb-3">
                                 <a href="{{ url_for('painel_moderacao_posts') }}" class="btn btn-outline-warning">Moderação</a>
+                                <a href="{{ url_for('gerenciar_usuarios') }}" class="btn btn-outline-info">Gerenciar Usuários</a>
                                 <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light" data-open-tab="abajogos-tab" role="button">Voltar aos jogos</a>
                             </div>
                             <h6 class="mb-3 text-warning">Cadastrar jogo</h6>
@@ -377,19 +378,65 @@
             <div class="sidebar-panel mb-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0">Sugestões</h5>
-                    <span class="badge bg-dark border border-info text-info">{{ usuarios_sugeridos|length if usuarios_sugeridos else 0 }}</span>
+                    <span id="sugestoes-total" class="badge bg-dark border border-info text-info">{{ sugestoes_total if sugestoes_total is not none else usuarios_sugeridos|length if usuarios_sugeridos else 0 }}</span>
                 </div>
-                <div class="d-grid gap-2">
-                    {% for usuario in usuarios_sugeridos %}
-                        <div class="surface-panel p-3">
-                            <p class="mb-1 fw-semibold">{{ usuario.nome }}</p>
-                            <p class="text-white-50 small mb-2">{{ usuario.email }}</p>
-                            <a href="{{ url_for('adicionar_amigo', email_alvo=usuario.email) }}" class="btn btn-sm btn-outline-info w-100">Adicionar amigo</a>
+                <form id="sugestoes-search-form" class="mb-3" autocomplete="off">
+                    <label for="sugestoes-search-input" class="form-label text-white-50">Pesquisar usuários</label>
+                    <div class="input-group">
+                        <input type="search" id="sugestoes-search-input" class="form-control form-control-dark" placeholder="Nome ou nickname" value="{{ sugestoes_termo or '' }}">
+                        <button type="submit" class="btn btn-info">Pesquisar</button>
+                    </div>
+                </form>
+                <div id="sugestoes-content" class="sugestoes-list">
+                    {% for usuario in sugestoes_pagina %}
+                        <div class="surface-panel p-3 sugestao-card" data-email="{{ usuario.email }}">
+                            <div class="d-flex gap-3 align-items-center w-100">
+                                {% if usuario.avatar_url %}
+                                    <img src="{{ usuario.avatar_url }}" alt="Avatar de {{ usuario.nome }}" class="avatar-circle avatar-image" onerror="this.onerror=null;this.src=''; this.style.display='none';">
+                                {% else %}
+                                    <div class="avatar-circle bg-dark text-info">{{ usuario.nome[:1] }}</div>
+                                {% endif %}
+                                <div class="flex-grow-1 min-w-0">
+                                    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                        <h6 class="mb-0 text-break">{{ usuario.nome }}</h6>
+                                        <span class="badge bg-dark border border-info text-info small">{{ usuario.nickname }}</span>
+                                    </div>
+                                    <p class="text-white-50 small mb-1 text-break">{{ usuario.email }}</p>
+                                    <div class="d-flex flex-wrap gap-2 text-white-50 small">
+                                        <span>{{ usuario.jogos_count }} jogos</span>
+                                        <span>{{ usuario.status }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <a href="{{ url_for('adicionar_amigo', email_alvo=usuario.email) }}" class="btn btn-sm btn-outline-info w-100 mt-3">Adicionar amigo</a>
                         </div>
                     {% else %}
-                        <p class="text-white-50 small mb-0">Sem sugestões novas no momento.</p>
+                        <div class="empty-state-card p-3">Nenhum usuário encontrado.</div>
                     {% endfor %}
                 </div>
+                <nav aria-label="Navegação de sugestões" class="mt-3">
+                    <ul id="sugestoes-pagination" class="pagination pagination-sm justify-content-center flex-nowrap gap-2 mb-0">
+                        {% if sugestoes_total_paginas and sugestoes_total_paginas > 1 %}
+                            <li class="page-item {{ 'disabled' if sugestoes_pagina_atual <= 1 else '' }}">
+                                <button class="page-link" type="button" data-page="{{ sugestoes_pagina_atual - 1 }}">← Anterior</button>
+                            </li>
+                            {% for num in range(1, sugestoes_total_paginas + 1) %}
+                                {% if num == 1 or num == sugestoes_total_paginas or (num >= sugestoes_pagina_atual - 1 and num <= sugestoes_pagina_atual + 1) %}
+                                    <li class="page-item {{ 'active' if num == sugestoes_pagina_atual else '' }}">
+                                        <button class="page-link" type="button" data-page="{{ num }}">{{ num }}</button>
+                                    </li>
+                                {% elif num == 2 and sugestoes_pagina_atual > 3 %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% elif num == sugestoes_total_paginas - 1 and sugestoes_pagina_atual < sugestoes_total_paginas - 2 %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+                            <li class="page-item {{ 'disabled' if sugestoes_pagina_atual >= sugestoes_total_paginas else '' }}">
+                                <button class="page-link" type="button" data-page="{{ sugestoes_pagina_atual + 1 }}">Próxima →</button>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
             </div>
 
             <div class="sidebar-panel mb-4">
@@ -537,6 +584,170 @@
             card.classList.toggle('d-none', filtro !== 'all' && origem !== filtro);
         });
     });
+
+    const sugestoesSearchForm = document.getElementById('sugestoes-search-form');
+    const sugestoesSearchInput = document.getElementById('sugestoes-search-input');
+    const sugestoesContent = document.getElementById('sugestoes-content');
+    const sugestoesTotal = document.getElementById('sugestoes-total');
+    const sugestoesPagination = document.getElementById('sugestoes-pagination');
+
+    let sugestoesAbortController = null;
+
+    async function carregarSugestoes(termo = '', pagina = 1) {
+        if (!sugestoesContent || !sugestoesPagination || !sugestoesTotal) {
+            return;
+        }
+
+        if (sugestoesAbortController) {
+            sugestoesAbortController.abort();
+        }
+        sugestoesAbortController = new AbortController();
+
+        const params = new URLSearchParams({ termo: termo.trim(), pagina: pagina.toString() });
+
+        try {
+            const response = await fetch(`/sugestoes?${params.toString()}`, {
+                signal: sugestoesAbortController.signal,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            if (!response.ok) {
+                console.error('Erro ao carregar sugestões:', response.statusText);
+                return;
+            }
+
+            const data = await response.json();
+            if (!data || typeof data !== 'object') {
+                return;
+            }
+
+            sugestoesTotal.textContent = data.total || 0;
+            sugestoesContent.innerHTML = '';
+
+            if (!data.sugestoes.length) {
+                sugestoesContent.innerHTML = '<div class="empty-state-card p-3">Nenhum usuário encontrado.</div>';
+            } else {
+                data.sugestoes.forEach((usuario) => {
+                    const card = document.createElement('div');
+                    card.className = 'surface-panel p-3 sugestao-card';
+                    card.innerHTML = `
+                        <div class="d-flex gap-3 align-items-center w-100">
+                            ${usuario.avatar_url ? `<img src="${usuario.avatar_url}" alt="Avatar de ${usuario.nome}" class="avatar-circle avatar-image" onerror="this.onerror=null;this.src=''; this.style.display='none';">` : `<div class="avatar-circle bg-dark text-info">${usuario.nome.charAt(0) || 'U'}</div>`}
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                    <h6 class="mb-0 text-break">${usuario.nome}</h6>
+                                    <span class="badge bg-dark border border-info text-info small">${usuario.nickname}</span>
+                                </div>
+                                <p class="text-white-50 small mb-1 text-break">${usuario.email}</p>
+                                <div class="d-flex flex-wrap gap-2 text-white-50 small">
+                                    <span>${usuario.jogos_count} jogos</span>
+                                    <span>${usuario.status}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="/amizade/adicionar/${encodeURIComponent(usuario.email)}" class="btn btn-sm btn-outline-info w-100 mt-3">Adicionar amigo</a>
+                    `;
+                    sugestoesContent.appendChild(card);
+                });
+            }
+
+            sugestoesPagination.innerHTML = '';
+            if (data.total_paginas > 1) {
+                const criarBotao = (texto, paginaAlvo, ativado = true, ativa = false) => {
+                    const item = document.createElement('li');
+                    item.className = `page-item ${!ativado ? 'disabled' : ''} ${ativa ? 'active' : ''}`;
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'page-link';
+                    button.textContent = texto;
+                    if (ativado) {
+                        button.dataset.page = paginaAlvo;
+                    } else {
+                        button.disabled = true;
+                    }
+                    item.appendChild(button);
+                    return item;
+                };
+
+                sugestoesPagination.appendChild(criarBotao('← Anterior', Math.max(1, data.pagina_atual - 1), data.pagina_atual > 1));
+
+                const adicionarPagina = (numero) => {
+                    const ativa = numero === data.pagina_atual;
+                    sugestoesPagination.appendChild(criarBotao(numero.toString(), numero, true, ativa));
+                };
+
+                if (data.total_paginas <= 7) {
+                    for (let i = 1; i <= data.total_paginas; i += 1) {
+                        adicionarPagina(i);
+                    }
+                } else {
+                    const paginaAtual = data.pagina_atual;
+                    const adicionarElipse = () => {
+                        const item = document.createElement('li');
+                        item.className = 'page-item disabled';
+                        item.innerHTML = '<span class="page-link">...</span>';
+                        sugestoesPagination.appendChild(item);
+                    };
+
+                    adicionarPagina(1);
+                    if (paginaAtual > 4) {
+                        adicionarElipse();
+                    }
+
+                    const inicio = Math.max(2, paginaAtual - 1);
+                    const fim = Math.min(data.total_paginas - 1, paginaAtual + 1);
+                    for (let i = inicio; i <= fim; i += 1) {
+                        adicionarPagina(i);
+                    }
+
+                    if (paginaAtual < data.total_paginas - 3) {
+                        adicionarElipse();
+                    }
+                    adicionarPagina(data.total_paginas);
+                }
+
+                sugestoesPagination.appendChild(criarBotao('Próxima →', Math.min(data.total_paginas, data.pagina_atual + 1), data.pagina_atual < data.total_paginas));
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                return;
+            }
+            console.error('Erro ao carregar sugestões:', err);
+        }
+    }
+
+    let sugestoesSearchTimeout = null;
+
+    if (sugestoesSearchForm) {
+        sugestoesSearchInput.addEventListener('input', function () {
+            if (sugestoesSearchTimeout) {
+                clearTimeout(sugestoesSearchTimeout);
+            }
+            sugestoesSearchTimeout = setTimeout(() => {
+                carregarSugestoes(sugestoesSearchInput.value.trim(), 1);
+            }, 250);
+        });
+
+        sugestoesSearchInput.addEventListener('search', function () {
+            carregarSugestoes(this.value.trim(), 1);
+        });
+
+        sugestoesSearchForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            carregarSugestoes(sugestoesSearchInput.value.trim(), 1);
+        });
+    }
+
+    sugestoesPagination?.addEventListener('click', function (event) {
+        const button = event.target.closest('button[data-page]');
+        if (!button) {
+            return;
+        }
+        const pagina = Number(button.dataset.page) || 1;
+        carregarSugestoes(sugestoesSearchInput.value.trim(), pagina);
+    });
+
+    carregarSugestoes(sugestoesSearchInput.value.trim(), {{ sugestoes_pagina_atual or 1 }});
 
     // Polling automático para atualizar status dos amigos a cada 2 segundos (mais agressivo)
     function atualizarStatusAmigos() {
@@ -697,6 +908,78 @@
 
     .avatar-image {
         object-fit: cover;
+    }
+
+    .form-control-dark {
+        background: rgba(15, 23, 42, 0.92);
+        border-color: rgba(148, 163, 184, 0.18);
+        color: var(--text-main);
+    }
+
+    .form-control-dark:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 0.15rem rgba(56, 189, 248, 0.2);
+    }
+
+    .sugestoes-list {
+        display: grid;
+        gap: 0.85rem;
+        width: 100%;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .sugestao-card {
+        width: 100%;
+        min-height: 190px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 1rem;
+        box-sizing: border-box;
+        overflow: hidden;
+        max-width: 100%;
+    }
+
+    #sugestoes-pagination {
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    #sugestoes-pagination::-webkit-scrollbar {
+        display: none;
+    }
+
+    #sugestoes-pagination .page-link {
+        border-radius: 0.75rem;
+        min-width: 2.25rem;
+        min-height: 2.25rem;
+        padding: 0.35rem 0.6rem;
+        white-space: nowrap;
+        transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+    }
+
+    #sugestoes-pagination .page-link:hover:not(:disabled) {
+        transform: translateY(-1px);
+        background-color: rgba(14, 165, 233, 0.12);
+        border-color: rgba(56, 189, 248, 0.35);
+    }
+
+    #sugestoes-pagination .page-item.active .page-link {
+        background-color: rgba(56, 189, 248, 0.18);
+        border-color: rgba(56, 189, 248, 0.4);
+        color: var(--text-main);
+    }
+
+    #sugestoes-search-form .input-group .btn {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+
+    #sugestoes-search-form .input-group .form-control {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
     }
 </style>
 {% endblock %}

@@ -29,6 +29,7 @@
                 radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 30%),
                 linear-gradient(180deg, #05111f 0%, #0b1528 100%);
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         h1, h2, h3, h4, h5, .navbar-brand {
@@ -156,6 +157,28 @@
 
         .container {
             max-width: 1400px;
+            width: min(100%, 1400px);
+        }
+
+        .avatar-circle {
+            flex-shrink: 0;
+            overflow: hidden;
+            aspect-ratio: 1 / 1;
+        }
+
+        .avatar-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .modal-backdrop {
+            backdrop-filter: blur(2px);
+        }
+
+        .modal-content {
+            overflow: hidden;
         }
 
         .card,
@@ -513,6 +536,21 @@
     </div>
 
     <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const cleanupModalState = () => {
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+                document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
+            };
+
+            document.querySelectorAll('.modal').forEach((modalElement) => {
+                modalElement.addEventListener('hidden.bs.modal', cleanupModalState);
+            });
+
+            cleanupModalState();
+        });
+
         window.marcarComoLida = function (notifId) {
             fetch(`/notificacao/${notifId}/marcar-lida`, {
                 method: 'POST',

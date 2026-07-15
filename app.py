@@ -7,6 +7,7 @@ from modelos.amigos_biblioteca import (
     GerenciadorNotificacoes, GerenciadorMensagens,
     AMIZADES_DB, BIBLIOTECA_DB, REVIEWS_DB, REVIEW_COMENTARIOS_DB, NOTIFICACOES_DB, MENSAGENS_DB
 )
+import modelos.amigos_biblioteca as amigos_biblioteca_module
 from threading import Thread
 import json
 import os
@@ -27,6 +28,20 @@ from datetime import datetime, timedelta
 import secrets
 import sqlite3
 from excecao import GameLinkException, AutenticacaoError, OperacaoInvalidaError
+from steam_audit import (
+    log_steamid_resolvido, log_steamid_falha,
+    log_fetch_xml_iniciado, log_fetch_xml_sucesso, log_fetch_xml_erro,
+    log_parse_xml_iniciado, log_parse_xml_sucesso, log_parse_xml_erro,
+    log_jogos_extraidos, log_paginacao_finalizada, log_bibliotecas_obtidas,
+    log_deduplicacao, log_import_iniciado, log_jogo_criado_catalogo,
+    log_jogo_ja_existia_catalogo, log_jogo_adicionado_biblioteca,
+    log_jogo_atualizado_biblioteca, log_jogo_import_erro, log_import_finalizado,
+    log_validacao_banco_dados, log_validacao_interface, log_discrepancia,
+    limpar_log_audit, ler_log_audit
+)
+from steam_api import obter_jogos, obter_perfil, obter_status, obter_jogo
+from steam_local import listar_jogos_instalados
+from library_manager import unificar_biblioteca
 
 try:
     import webview
@@ -57,6 +72,7 @@ from database import (
     persistir_notificacao,
     marcar_notificacao_lida,
     persistir_mensagem,
+    excluir_usuario_completo,
 )
 
 app = Flask(__name__)
@@ -96,6 +112,14 @@ _carregar_env_local()
 
 # Inicializa o banco de dados SQLite se ainda não existir
 init_db()
+
+
+def _garantir_biblioteca_db_consistente() -> None:
+    if getattr(amigos_biblioteca_module, 'BIBLIOTECA_DB', None) is not BIBLIOTECA_DB:
+        amigos_biblioteca_module.BIBLIOTECA_DB = BIBLIOTECA_DB
+
+
+_garantir_biblioteca_db_consistente()
 
 
 def _normalizar_email(email: str) -> str:
@@ -199,6 +223,25 @@ def _carregar_usuarios_do_banco() -> None:
 def _salvar_usuario_no_banco(user) -> None:
     conn = get_connection()
     cursor = conn.cursor()
+
+    idade = getattr(user, 'idade', None)
+    gosto_jogos = getattr(user, 'gosto_jogos', '')
+    telefone = getattr(user, 'telefone', '')
+    steam_id64 = getattr(user, 'steam_id64', '')
+    steam_api_key = getattr(user, 'steam_api_key', '')
+    steam_online = bool(getattr(user, 'steam_online', False))
+    steam_current_game = getattr(user, 'steam_current_game', '')
+    steam_current_game_appid = getattr(user, 'steam_current_game_appid', None)
+    steam_playtime_minutes = getattr(user, 'steam_playtime_minutes', 0)
+    steam_last_update = getattr(user, 'steam_last_update', None)
+    hydra_account_email = getattr(user, 'hydra_account_email', '')
+    hydra_usuario = getattr(user, 'hydra_usuario', '')
+    hydra_pin = getattr(user, 'hydra_pin', '')
+    hydra_token = getattr(user, 'hydra_token', '')
+    hydra_current_game = getattr(user, 'hydra_current_game', '')
+    hydra_last_update = getattr(user, 'hydra_last_update', None)
+    foto_perfil = getattr(user, 'foto_perfil', '')
+
     cursor.execute(
         '''
         INSERT INTO usuarios (
@@ -230,26 +273,26 @@ def _salvar_usuario_no_banco(user) -> None:
             is_admin=excluded.is_admin
         ''',
         (
-            user.nome,
-            user.email,
-            user._Usuario__password if hasattr(user, '_Usuario__password') else '',
-            user.idade,
-            user.gosto_jogos,
-            user.telefone,
-            user.steam_id64,
-            user.steam_api_key,
-            1 if user.steam_online else 0,
-            user.steam_current_game,
-            user.steam_current_game_appid,
-            user.steam_playtime_minutes,
-            user.steam_last_update,
-            user.hydra_account_email,
-            user.hydra_usuario,
-            user.hydra_pin,
-            user.hydra_token,
-            user.hydra_current_game,
-            user.hydra_last_update,
-            getattr(user, 'foto_perfil', ''),
+            getattr(user, 'nome', ''),
+            getattr(user, 'email', ''),
+            getattr(user, '_Usuario__password', '') if hasattr(user, '_Usuario__password') else '',
+            idade,
+            gosto_jogos,
+            telefone,
+            steam_id64,
+            steam_api_key,
+            1 if steam_online else 0,
+            steam_current_game,
+            steam_current_game_appid,
+            steam_playtime_minutes,
+            steam_last_update,
+            hydra_account_email,
+            hydra_usuario,
+            hydra_pin,
+            hydra_token,
+            hydra_current_game,
+            hydra_last_update,
+            foto_perfil,
             1 if isinstance(user, Admin) else 0,
         )
     )
@@ -983,15 +1026,16 @@ def _hydra_sincronizar_estado_real(user) -> None:
     # Valida estado REAL do sistema (SEMPRE!)
     estado_real = _hydra_get_full_state_real()
     agora = datetime.now().isoformat()
+    estado_armazenado = getattr(user, 'hydra_current_game', '') or ''
     
     print(f'[Hydra SYNC] {user.email}: Validando estado REAL')
     print(f'[Hydra SYNC]   Hydra ativo: {estado_real["hydra_ativo"]}')
     print(f'[Hydra SYNC]   Jogo real: "{estado_real["jogo"]}"')
-    print(f'[Hydra SYNC]   Armazenado: "{user.hydra_current_game}"')
+    print(f'[Hydra SYNC]   Armazenado: "{estado_armazenado}"')
     
     # Caso 1: Hydra não está rodando
     if not estado_real['hydra_ativo']:
-        if user.hydra_current_game:
+        if estado_armazenado:
             print(f'[Hydra SYNC] ❌ INCONSISTÊNCIA: Hydra FECHADO mas DB tem status')
             print(f'[Hydra SYNC] 🔧 CORRIGINDO: Limpando')
             user.hydra_current_game = ''
@@ -1000,7 +1044,7 @@ def _hydra_sincronizar_estado_real(user) -> None:
         return
     
     # Caso 2: Hydra ativo - verifica se jogo mudou
-    if estado_real['jogo'] != user.hydra_current_game:
+    if estado_real['jogo'] != estado_armazenado:
         if estado_real['jogo']:
             print(f'[Hydra SYNC] 🎮 JOGO INICIADO: "{estado_real["jogo"]}"')
         else:
@@ -1569,6 +1613,31 @@ def montar_hydra_contexto(user) -> dict:
     }
 
 
+def _steam_resposta_indica_login_ou_bloqueio(texto: str) -> bool:
+    if not texto:
+        return False
+
+    texto_normalizado = texto.lower()
+    sinais = [
+        'iniciar sessão',
+        'sign in',
+        'login',
+        'steam guard',
+        'captcha',
+        'please wait',
+        'temporarily unavailable',
+        'too many requests',
+        'access denied',
+        'verify your account',
+        'to continue',
+    ]
+
+    if '<gameslist>' in texto_normalizado or '<gameslist' in texto_normalizado:
+        return False
+
+    return any(sinal in texto_normalizado for sinal in sinais)
+
+
 def _deduplicar_jogos_steam(jogos: list) -> list:
     if not jogos:
         return []
@@ -1588,28 +1657,97 @@ def _deduplicar_jogos_steam(jogos: list) -> list:
     return resultado
 
 
+def _steam_fetch_public_games_paginated(steam_id64: str, page_size: int = 200) -> list[dict]:
+    """Compatibilidade: usa a API oficial e os manifests locais da Steam em vez do scraping da página pública."""
+    if not steam_id64:
+        log_fetch_xml_erro(steam_id64, 0, "SteamID64 vazio")
+        return []
+
+    api_key = os.environ.get('STEAM_API_KEY', '').strip()
+    try:
+        jogos = unificar_biblioteca(steam_id64, api_key)
+    except Exception as exc:
+        log_fetch_xml_erro(steam_id64, 0, str(exc))
+        return []
+
+    resultado = []
+    for jogo in jogos:
+        appid = int(jogo.get('appid') or 0)
+        if not appid:
+            continue
+        resultado.append({
+            'appid': appid,
+            'name': jogo.get('name') or f'App {appid}',
+            'playtime_forever': int(jogo.get('playtime_forever') or 0),
+            'cover_url': jogo.get('cover_url') or f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg',
+        })
+
+    resultado = _deduplicar_jogos_steam(resultado)
+    log_bibliotecas_obtidas(steam_id64, 'api_official', len(resultado))
+    return resultado
+
+
 def _steam_fetch_json(url: str) -> dict:
+    # User-Agent mais realista para evitar bloqueios
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    ]
+    import random
+    user_agent = random.choice(user_agents)
+    
     request = Request(
         url,
         headers={
-            'User-Agent': 'GameLink/1.0',
+            'User-Agent': user_agent,
             'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://steamcommunity.com/',
         },
     )
-    with urlopen(request, timeout=8) as resposta:
-        return json.loads(resposta.read().decode('utf-8', errors='replace'))
+    try:
+        with urlopen(request, timeout=15) as resposta:
+            http_code = resposta.getcode()
+            if http_code != 200:
+                raise Exception(f"HTTP {http_code}")
+            return json.loads(resposta.read().decode('utf-8', errors='replace'))
+    except Exception as e:
+        raise Exception(f"Erro ao buscar JSON: {str(e)}")
 
 
 def _steam_fetch_text(url: str) -> str:
+    # User-Agent mais realista para evitar bloqueios
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    ]
+    import random
+    user_agent = random.choice(user_agents)
+    
     request = Request(
         url,
         headers={
-            'User-Agent': 'GameLink/1.0',
+            'User-Agent': user_agent,
             'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'Accept': '*/*',
+            'Referer': 'https://steamcommunity.com/',
         },
     )
-    with urlopen(request, timeout=8) as resposta:
-        return resposta.read().decode('utf-8', errors='replace')
+    try:
+        with urlopen(request, timeout=15) as resposta:
+            http_code = resposta.getcode()
+            if http_code != 200:
+                raise Exception(f"HTTP {http_code}")
+            conteudo = resposta.read()
+            # Tenta UTF-8 primeiro, depois latin-1 se falhar
+            try:
+                return conteudo.decode('utf-8')
+            except UnicodeDecodeError:
+                return conteudo.decode('latin-1', errors='replace')
+    except Exception as e:
+        raise Exception(f"Erro ao buscar texto: {str(e)}")
 
 
 def _steam_post_text(url: str, dados: dict) -> str:
@@ -1700,7 +1838,6 @@ def _steam_resolver_steamid(steam_id_ou_vanity: str, api_key: str) -> str | None
     return None
 
 
-@lru_cache(maxsize=128)
 def _steam_owned_games(steam_id64: str, api_key: str) -> list:
     url = (
         'https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?'
@@ -1729,49 +1866,49 @@ def _steam_owned_games(steam_id64: str, api_key: str) -> list:
 
 
 def _steam_most_played_games_publico(steam_id64: str) -> list:
+    """Fallback compatível: usa a API oficial da Steam e os manifests locais quando não há perfil público."""
     if not steam_id64:
         return []
 
-    url = f'https://steamcommunity.com/profiles/{steam_id64}/?xml=1'
+    api_key = os.environ.get('STEAM_API_KEY', '').strip()
     try:
-        xml_texto = _steam_fetch_text(url)
-    except Exception:
-        return []
-
-    try:
-        raiz = ET.fromstring(xml_texto)
+        jogos = unificar_biblioteca(steam_id64, api_key)
     except Exception:
         return []
 
     resultado = []
-    for jogo in raiz.findall('.//mostPlayedGames/mostPlayedGame'):
-        appid = jogo.findtext('statsName', default='').strip()
-        nome = jogo.findtext('gameName', default='').strip()
-        horas = jogo.findtext('hoursOnRecord', default='0').strip()
-        if not appid:
-            link = jogo.findtext('gameLink', default='').strip()
-            correspondencia = re.search(r'/app/(\d+)', link)
-            if correspondencia:
-                appid = correspondencia.group(1)
+    for jogo in jogos:
+        appid = int(jogo.get('appid') or 0)
         if not appid:
             continue
-
-        try:
-            horas_float = float(horas or 0)
-        except ValueError:
-            horas_float = 0.0
-
         resultado.append({
-            'appid': int(appid),
-            'name': nome or f'App {appid}',
-            'playtime_forever': int(round(horas_float * 60)),
-            'cover_url': f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg',
+            'appid': appid,
+            'name': jogo.get('name') or f'App {appid}',
+            'playtime_forever': int(jogo.get('playtime_forever') or 0),
+            'cover_url': jogo.get('cover_url') or f'https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg',
         })
 
-    return _deduplicar_jogos_steam(resultado)
+    resultado_final = _deduplicar_jogos_steam(resultado)
+    log_bibliotecas_obtidas(steam_id64, 'most_played_api', len(resultado_final))
+    return resultado_final
 
 
-@lru_cache(maxsize=256)
+def _steam_obter_biblioteca_publica_completa(steam_id64: str) -> list[dict]:
+    if not steam_id64:
+        log_bibliotecas_obtidas(steam_id64, 'nenhuma', 0)
+        return []
+
+    jogos = _steam_fetch_public_games_paginated(steam_id64)
+    if not jogos:
+        log_bibliotecas_obtidas(steam_id64, 'api_fallback', 0)
+        jogos = _steam_most_played_games_publico(steam_id64)
+
+    if not jogos:
+        log_bibliotecas_obtidas(steam_id64, 'vazia', 0)
+
+    return jogos
+
+
 def _steam_achievements_jogo(steam_id64: str, api_key: str, appid: int) -> dict | None:
     if not appid:
         return None
@@ -2110,26 +2247,65 @@ def sincronizar_status_steam(user_email: str) -> None:
     steam_id = _steam_id_ou_vanity_usuario(user)
     api_key = _steam_api_key_usuario(user)
 
-    # Resolve Steam ID se for vanity URL
     if steam_id and not steam_id.isdigit():
         steam_id = _steam_resolver_steamid(steam_id, api_key) or steam_id
 
     if not steam_id:
         return
 
-    # Busca o status atual com refresh para evitar cache e detectar jogos abertos imediatamente
-    status = _buscar_status_steam_usuario(steam_id, api_key, force_refresh=True)
+    try:
+        perfil = obter_perfil(steam_id, api_key)
+        status = obter_status(steam_id, api_key)
+    except Exception as exc:
+        print(f'[Sincronizar Steam] Erro oficial para {user.email}: {exc}')
+        return
 
-    # Atualiza o usuário
-    user.steam_online = status['online']
-    user.steam_current_game = status['game'] or ''
-    user.steam_current_game_appid = status['appid'] if status['game'] else None
+    user.steam_online = bool(status.get('online'))
+    user.steam_current_game = status.get('game') or ''
+    user.steam_current_game_appid = status.get('appid') if status.get('game') else None
     user.steam_last_update = datetime.now().isoformat()
+    if perfil.get('avatar'):
+        user.foto_perfil = perfil.get('avatar', '')
 
-    # Salva no banco de dados
     _salvar_usuario_no_banco(user)
-    
+
     print(f'[Sincronizar Steam] {user.email}: online={user.steam_online}, game="{user.steam_current_game}", appid={user.steam_current_game_appid}')
+
+
+def sincronizar_steam_oficial(user_email: str) -> dict:
+    """Sincronização explícita usando a integração oficial da Steam."""
+    meu_email = _normalizar_email(user_email)
+    user = USUARIOS_DB.get(meu_email)
+    if not user:
+        return {'sincronizado': False, 'erro': 'Usuário não encontrado'}
+
+    steam_id64 = (getattr(user, 'steam_id64', '') or '').strip()
+    api_key = (getattr(user, 'steam_api_key', '') or '').strip()
+
+    if not steam_id64:
+        return {'sincronizado': False, 'erro': 'SteamID64 não configurado'}
+
+    perfil = obter_perfil(steam_id64, api_key)
+    status = obter_status(steam_id64, api_key)
+    jogos = unificar_biblioteca(steam_id64, api_key)
+
+    user.steam_online = bool(status.get('online'))
+    user.steam_current_game = status.get('game') or ''
+    user.steam_current_game_appid = status.get('appid') if status.get('game') else None
+    user.steam_last_update = datetime.now().isoformat()
+    user.foto_perfil = perfil.get('avatar') or user.foto_perfil or ''
+    _salvar_usuario_no_banco(user)
+
+    importar_steam_para_biblioteca_local(meu_email)
+
+    return {
+        'sincronizado': True,
+        'steam_id64': steam_id64,
+        'perfil': perfil,
+        'status': status,
+        'jogos': jogos[:8],
+        'jogos_total': len(jogos),
+    }
 
 
 def montar_steam_contexto(user, steam_appid: int | None = None) -> dict:
@@ -2139,34 +2315,26 @@ def montar_steam_contexto(user, steam_appid: int | None = None) -> dict:
     jogos = []
     conquistas = None
     erro = None
-    fonte_jogos = 'api'
+    fonte_jogos = 'api_official'
     capas_usadas: set[str] = set()
 
     if steam_input:
         steam_id64 = _steam_resolver_steamid(steam_input, api_key)
         if not steam_id64:
-            erro = 'Não foi possível resolver sua conta Steam. Cole a URL pública do perfil Steam ou o SteamID64.'
+            erro = 'Não foi possível resolver sua conta Steam. Use o SteamID64 ou faça o login oficial via OpenID.'
         else:
-            if api_key:
-                jogos = _steam_owned_games(steam_id64, api_key)
-            if not jogos:
-                jogos = _steam_most_played_games_publico(steam_id64)
-                if jogos:
-                    fonte_jogos = 'perfil_publico'
-                    if api_key:
-                        erro = 'A API oficial não retornou a lista completa, então importei os jogos públicos mais jogados do perfil.'
-                else:
-                    if api_key:
-                        erro = 'A Steam foi encontrada, mas nenhum jogo apareceu. Se o perfil for privado, deixe os detalhes dos jogos como públicos.'
-                    else:
-                        erro = 'A Steam foi encontrada, mas a lista pública não retornou jogos. Deixe o perfil Steam com jogos públicos.'
+            jogos = _steam_obter_biblioteca_publica_completa(steam_id64)
+            if jogos:
+                fonte_jogos = 'api_official'
+            else:
+                jogos = []
+                erro = 'A Steam foi encontrada, mas não foi possível obter a biblioteca com os métodos oficiais.'
+
             jogos = _deduplicar_jogos_steam(jogos)
             if steam_appid is None and jogos:
                 steam_appid = jogos[0]['appid']
             if steam_appid and api_key:
                 conquistas = _steam_achievements_jogo(steam_id64, api_key, int(steam_appid))
-            if steam_appid and not conquistas:
-                conquistas = _steam_achievements_publico(steam_id64, int(steam_appid))
 
             for jogo in jogos:
                 jogo['cover_url'] = _capa_unica_para_lista(
@@ -2192,7 +2360,7 @@ def montar_steam_contexto(user, steam_appid: int | None = None) -> dict:
         'steam_input': steam_input,
         'steam_id64': steam_id64,
         'api_key_configurada': bool(api_key),
-        'jogos': jogos[:18],
+        'jogos': jogos,
         'jogo_selecionado': jogo_selecionado,
         'steam_appid': int(steam_appid) if steam_appid else None,
         'conquistas': conquistas,
@@ -2260,6 +2428,7 @@ def _steam_jogo_para_catalogo(jogo_steam: dict) -> Jogo:
 
 
 def importar_steam_para_biblioteca_local(meu_email: str) -> tuple[int, int, str | None]:
+    _garantir_biblioteca_db_consistente()
     user = USUARIOS_DB.get(meu_email)
     if not user:
         return 0, 0, 'Usuário não encontrado.'
@@ -2268,38 +2437,82 @@ def importar_steam_para_biblioteca_local(meu_email: str) -> tuple[int, int, str 
     if not steam_contexto.get('configurado') and not steam_contexto.get('jogos'):
         return 0, 0, 'Conecte sua Steam com URL pública ou SteamID64 antes de importar. A Steam API Key é opcional para conquistas.'
 
+    steam_id64 = steam_contexto.get('steam_id64', '')
+    jogos_encontrados = len(steam_contexto.get('jogos', []))
+    
+    log_import_iniciado(meu_email, steam_id64, jogos_encontrados)
+
     jogos_importados = 0
     jogos_ja_existiam = 0
+    jogos_com_erro = 0
+    appids_importados = []
+    appids_atualizados = []
 
     for jogo_steam in steam_contexto.get('jogos', []):
         appid = int(jogo_steam.get('appid') or 0)
         if not appid:
             continue
 
-        if appid not in JOGOS_DB:
-            jogo_catalogo = _steam_jogo_para_catalogo(jogo_steam)
-            JOGOS_DB[appid] = jogo_catalogo
-            persistir_jogo(jogo_catalogo, jogo_catalogo._categorias)
-
-        if GerenciadorBiblioteca.jogo_na_biblioteca(meu_email, appid):
-            jogos_ja_existiam += 1
-            continue
-
         try:
+            if appid not in JOGOS_DB:
+                jogo_catalogo = _steam_jogo_para_catalogo(jogo_steam)
+                JOGOS_DB[appid] = jogo_catalogo
+                persistir_jogo(jogo_catalogo, jogo_catalogo._categorias)
+                log_jogo_criado_catalogo(appid, jogo_steam.get('name', 'Desconhecido'))
+            else:
+                log_jogo_ja_existia_catalogo(appid)
+
+            chave_biblioteca = f"{meu_email}_{appid}"
+            item_existente = BIBLIOTECA_DB.get(chave_biblioteca)
+            
+            if item_existente is not None:
+                jogos_ja_existiam += 1
+                horas_jogadas = int(round((jogo_steam.get('playtime_forever') or 0) / 60))
+                item_existente.atualizar_tempo_jogado(horas_jogadas)
+                item_existente.cover_url = _capa_steam_jogo(appid)
+                item_existente.origem = 'steam'
+                item_existente.codigo_origem = 'steam'
+                persistir_biblioteca_item(item_existente)
+                log_jogo_atualizado_biblioteca(meu_email, appid, jogo_steam.get('name', 'Desconhecido'), horas_jogadas)
+                appids_atualizados.append(appid)
+                continue
+
             novo_id_biblioteca = max([b.id for b in BIBLIOTECA_DB.values()], default=0) + 1
             item = GerenciadorBiblioteca.adicionar_jogo(novo_id_biblioteca, meu_email, appid)
             horas_jogadas = int(round((jogo_steam.get('playtime_forever') or 0) / 60))
             item.atualizar_tempo_jogado(horas_jogadas)
             item.cover_url = _capa_steam_jogo(appid)
+            item.origem = 'steam'
+            item.codigo_origem = 'steam'
             persistir_biblioteca_item(item)
             jogos_importados += 1
-        except Exception:
+            log_jogo_adicionado_biblioteca(meu_email, appid, jogo_steam.get('name', 'Desconhecido'), horas_jogadas)
+            appids_importados.append(appid)
+            
+        except Exception as e:
+            jogos_com_erro += 1
+            log_jogo_import_erro(meu_email, appid, str(e))
             continue
+
+    # Valida o resultado final no banco
+    biblioteca_usuario = GerenciadorBiblioteca.obter_biblioteca(meu_email)
+    quantidade_banco = len(biblioteca_usuario)
+    appids_banco = [item.jogo_id for item in biblioteca_usuario]
+    
+    log_validacao_banco_dados(meu_email, steam_id64, quantidade_banco, appids_banco)
+
+    # Calcula discrepâncias
+    jogos_perdidos = jogos_encontrados - jogos_importados - jogos_ja_existiam
+    if jogos_perdidos > 0:
+        appids_encontrados = [int(j.get('appid', 0)) for j in steam_contexto.get('jogos', [])]
+        appids_nao_importados = [aid for aid in appids_encontrados if aid not in appids_importados and aid not in appids_atualizados]
+        log_discrepancia('ENCONTRADOS', jogos_encontrados, 'IMPORTADOS', jogos_importados + jogos_ja_existiam, appids_nao_importados)
+
+    log_import_finalizado(meu_email, steam_id64, jogos_encontrados, jogos_importados, jogos_ja_existiam, jogos_perdidos)
 
     erro = None
     if jogos_importados:
-        if steam_contexto.get('fonte_jogos') == 'perfil_publico':
-            erro = 'Importei os jogos públicos mais jogados do perfil, porque a API oficial não retornou a lista completa.'
+        erro = None
     elif not jogos_ja_existiam:
         erro = steam_contexto.get('erro') or 'Nenhum jogo da Steam foi importado.'
 
@@ -2333,6 +2546,70 @@ def montar_amigos_contexto(email: str) -> dict:
         'pendentes': pendentes,
         'sugeridos': sugeridos,
     }
+
+
+def montar_sugestoes_contexto(email: str, termo: str = '', pagina_atual: int = 1, por_pagina: int = 4) -> dict:
+    termo_normalizado = (termo or '').strip().lower()
+    pendentes = GerenciadorAmigos.obter_solicitacoes_pendentes(email)
+    pendentes_emails = {sol.email_solicitante for sol in pendentes}
+    sugeridos = []
+
+    for usuario_email, usuario in USUARIOS_DB.items():
+        if usuario_email == email:
+            continue
+        if usuario_email in GerenciadorAmigos.obter_amigos(email):
+            continue
+        if usuario_email in pendentes_emails:
+            continue
+        if GerenciadorAmigos.sao_amigos(email, usuario_email):
+            continue
+
+        nickname = (usuario.email or '').split('@', 1)[0]
+        nome_normalizado = (usuario.nome or '').strip().lower()
+        nickname_normalizado = nickname.lower()
+        email_normalizado = (usuario.email or '').strip().lower()
+
+        if termo_normalizado:
+            if termo_normalizado not in nome_normalizado and termo_normalizado not in nickname_normalizado and termo_normalizado not in email_normalizado:
+                continue
+
+        sugeridos.append({
+            'email': usuario.email,
+            'nome': usuario.nome or nickname,
+            'nickname': nickname,
+            'avatar_url': usuario.foto_perfil or '',
+            'jogos_count': len(GerenciadorBiblioteca.obter_biblioteca(usuario.email)),
+            'status': usuario.obter_status_geral() if hasattr(usuario, 'obter_status_geral') else 'Offline',
+        })
+
+    sugeridos.sort(key=lambda item: item['nome'].lower())
+
+    pagina_atual, total_paginas, total, sugestoes_pagina = paginar_itens(
+        sugeridos,
+        pagina_atual,
+        por_pagina,
+    )
+
+    return {
+        'termo': termo,
+        'pagina_atual': pagina_atual,
+        'total_paginas': total_paginas,
+        'total': total,
+        'sugestoes': sugestoes_pagina,
+    }
+
+
+@app.route('/sugestoes')
+def sugestoes():
+    if 'user_email' not in session:
+        return jsonify({'erro': 'Não autorizado'}), 401
+
+    termino = request.args.get('termo', '')
+    pagina = request.args.get('pagina', 1, type=int)
+    dados = montar_sugestoes_contexto(session['user_email'], termino, pagina, 4)
+
+    return jsonify(dados)
+
 
 # Moderação de Conteúdo Dinâmica (Suporta o arquivo com espaço ou corrigido)
 import importlib.util
@@ -2572,6 +2849,39 @@ def paginar_itens(itens, pagina_atual, por_pagina=6):
     return pagina, total_paginas, total, itens[inicio:fim]
 
 
+def _remover_registros_relacionados_usuario(email: str):
+    email_normalizado = _normalizar_email(email)
+    if not email_normalizado:
+        return
+
+    for chave in list(AMIZADES_DB.keys()):
+        amizade = AMIZADES_DB[chave]
+        if amizade.email_solicitante == email_normalizado or amizade.email_receptor == email_normalizado:
+            del AMIZADES_DB[chave]
+
+    for chave in list(BIBLIOTECA_DB.keys()):
+        if chave.startswith(f'{email_normalizado}_'):
+            del BIBLIOTECA_DB[chave]
+
+    for chave in list(REVIEWS_DB.keys()):
+        if REVIEWS_DB[chave].email_usuario == email_normalizado:
+            del REVIEWS_DB[chave]
+
+    REVIEW_COMENTARIOS_DB[:] = [item for item in REVIEW_COMENTARIOS_DB if item.email_usuario != email_normalizado]
+
+    for post_id, post in list(POSTS_DB.items()):
+        if post.autor_email == email_normalizado:
+            del POSTS_DB[post_id]
+        else:
+            post.usuarios_curtidas = [usuario for usuario in post.usuarios_curtidas if usuario != email_normalizado]
+
+    COMENTARIOS_POSTS_DB[:] = [item for item in COMENTARIOS_POSTS_DB if item.autor_email != email_normalizado]
+    NOTIFICACOES_DB.pop(email_normalizado, None)
+    MENSAGENS_DB[:] = [item for item in MENSAGENS_DB if item.email_remetente != email_normalizado and item.email_destino != email_normalizado]
+    ONLINE_USERS.discard(email_normalizado)
+    USUARIOS_DB.pop(email_normalizado, None)
+
+
 # --- Rotas de Dashboard e Jogos ---
 @app.route('/dashboard')
 def dashboard():
@@ -2631,7 +2941,8 @@ def dashboard():
     biblioteca_cards = montar_biblioteca_cards(meu_email)
     contexto_amigos = montar_amigos_contexto(meu_email)
     amigos_ativos = [amigo for amigo in contexto_amigos['amigos'] if esta_online(amigo.email)]
-    
+    sugestoes_contexto = montar_sugestoes_contexto(meu_email, '', 1, 4)
+
     return render_template(
         'dashboard.html', 
         jogos=jogos,
@@ -2650,6 +2961,11 @@ def dashboard():
         amigos_emails=contexto_amigos['amigos_emails'],
         solicitacoes_pendentes=contexto_amigos['pendentes'],
         usuarios_sugeridos=contexto_amigos['sugeridos'],
+        sugestoes_pagina=sugestoes_contexto['sugestoes'],
+        sugestoes_pagina_atual=sugestoes_contexto['pagina_atual'],
+        sugestoes_total_paginas=sugestoes_contexto['total_paginas'],
+        sugestoes_total=sugestoes_contexto['total'],
+        sugestoes_termo=sugestoes_contexto['termo'],
         hydra_local_ativa=_hydra_local_ativo_real()
     )
 
@@ -2719,6 +3035,7 @@ def busca():
     notif_nao_lidas = GerenciadorNotificacoes.contar_nao_lidas(meu_email)
     biblioteca_cards = montar_biblioteca_cards(meu_email)
     contexto_amigos = montar_amigos_contexto(meu_email)
+    sugestoes_contexto = montar_sugestoes_contexto(meu_email, termo, 1, 4)
 
     return render_template(
         'dashboard.html',
@@ -2737,6 +3054,11 @@ def busca():
         amigos_emails=contexto_amigos['amigos_emails'],
         solicitacoes_pendentes=contexto_amigos['pendentes'],
         usuarios_sugeridos=contexto_amigos['sugeridos'],
+        sugestoes_pagina=sugestoes_contexto['sugestoes'],
+        sugestoes_pagina_atual=sugestoes_contexto['pagina_atual'],
+        sugestoes_total_paginas=sugestoes_contexto['total_paginas'],
+        sugestoes_total=sugestoes_contexto['total'],
+        sugestoes_termo=sugestoes_contexto['termo'],
         busca_termo=termo,
         filtro_selecionado=filtro,
         modo_busca=True
@@ -3032,15 +3354,14 @@ def sincronizar_steam():
     if not meu_email:
         return redirect(url_for('login'))
 
-    jogos_importados, jogos_ja_existiam, erro_steam = importar_steam_para_biblioteca_local(meu_email)
-    if jogos_importados:
-        flash(f'Steam sincronizada com {jogos_importados} jogo(s) importado(s).', 'success')
-    elif jogos_ja_existiam:
-        flash('Sua biblioteca local já estava sincronizada com a Steam.', 'info')
-    elif erro_steam:
-        flash(erro_steam, 'warning')
+    resultado = sincronizar_steam_oficial(meu_email)
+    if resultado.get('sincronizado'):
+        jogos_total = resultado.get('jogos_total', 0)
+        flash(f'Steam sincronizada com {jogos_total} jogo(s) encontrado(s).', 'success')
+    elif resultado.get('erro'):
+        flash(resultado['erro'], 'warning')
     else:
-        flash('Nenhum jogo da Steam foi importado.', 'warning')
+        flash('Não foi possível sincronizar a Steam.', 'warning')
 
     return redirect(request.referrer or url_for('perfil', email=meu_email))
 
@@ -3065,27 +3386,34 @@ def sync_steam_agora():
     if not steam_id:
         return jsonify({'erro': 'Steam ID não configurada'}), 400
     
-    # Busca com force_refresh=True para contornar cache e usar a API key do usuário
-    status = _buscar_status_steam_usuario(steam_id, api_key, force_refresh=True)
+    try:
+        perfil = obter_perfil(steam_id, api_key)
+        status = obter_status(steam_id, api_key)
+    except Exception as exc:
+        print(f'[/steam/sync-agora] Erro oficial: {exc}')
+        return jsonify({'erro': f'Erro ao consultar a Steam: {exc}'}), 500
     
     # Atualiza usuário
-    user.steam_online = status['online']
-    user.steam_current_game = status['game'] or ''
-    user.steam_current_game_appid = status['appid'] if status['game'] else None
+    user.steam_online = bool(status.get('online'))
+    user.steam_current_game = status.get('game') or ''
+    user.steam_current_game_appid = status.get('appid') if status.get('game') else None
     user.steam_last_update = datetime.now().isoformat()
+    if perfil.get('avatar'):
+        user.foto_perfil = perfil.get('avatar', '')
 
     _salvar_usuario_no_banco(user)
     _hydra_atualizar_status_local(user)
     
-    print(f'[/steam/sync-agora] {user.email}: online={status["online"]}, game="{status["game"]}", appid={status["appid"]}')
+    print(f'[/steam/sync-agora] {user.email}: online={user.steam_online}, game="{user.steam_current_game}", appid={user.steam_current_game_appid}')
     
     return jsonify({
         'online': user.steam_online,
         'jogo': user.steam_current_game,
         'appid': user.steam_current_game_appid,
         'atualizado_em': user.steam_last_update,
-        'hydra_jogo': user.hydra_current_game,
-        'hydra_atualizado_em': user.hydra_last_update,
+        'hydra_jogo': getattr(user, 'hydra_current_game', ''),
+        'hydra_atualizado_em': getattr(user, 'hydra_last_update', None),
+        'foto_perfil': getattr(user, 'foto_perfil', ''),
     })
 
 @app.route('/steam/status/sincronizar', methods=['POST'])
@@ -3321,6 +3649,111 @@ def debug_resposta_bruta_steam():
         'xml_resposta': resultado_xml,
         'status_processado': _buscar_status_steam_usuario(steam_id, api_key, force_refresh=True)
     })
+
+
+@app.route('/steam/audit-log')
+def steam_audit_log():
+    """Visualizar logs de auditoria do scraping Steam (apenas para admin ou debug)"""
+    # Nota: Em produção, adicione verificação de admin
+    meu_email = session.get('user_email')
+    if not meu_email:
+        return jsonify({'erro': 'Não autenticado'}), 401
+    
+    try:
+        conteudo_log = ler_log_audit()
+        
+        # Formata como HTML se solicitado
+        if request.args.get('format') == 'html':
+            html = f"""
+            <html>
+            <head>
+                <title>Audit Log - Steam Scraping</title>
+                <style>
+                    body {{ font-family: monospace; background: #1e1e1e; color: #00ff00; padding: 20px; }}
+                    pre {{ background: #0d0d0d; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+                    .error {{ color: #ff4444; }}
+                    .success {{ color: #44ff44; }}
+                    .info {{ color: #4488ff; }}
+                    .warning {{ color: #ffaa44; }}
+                    .download {{ 
+                        display: inline-block; 
+                        margin-bottom: 20px; 
+                        padding: 10px 20px; 
+                        background: #0066cc; 
+                        color: white; 
+                        text-decoration: none; 
+                        border-radius: 5px; 
+                    }}
+                </style>
+            </head>
+            <body>
+                <h1>🔍 Steam Scraping - Audit Log</h1>
+                <a href="/steam/audit-log?download=1" class="download">⬇️ Download Log (TXT)</a>
+                <pre>{conteudo_log}</pre>
+            </body>
+            </html>
+            """
+            return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+        
+        # Download como arquivo de texto
+        if request.args.get('download'):
+            return conteudo_log, 200, {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Content-Disposition': 'attachment; filename=steam_audit.log'
+            }
+        
+        # Retorna como JSON
+        linhas = conteudo_log.split('\n')
+        
+        # Processa linhas para extração de dados
+        resumo = {
+            'total_linhas': len(linhas),
+            'total_erros': sum(1 for l in linhas if '[ERROR' in l or '[CRITICAL' in l),
+            'total_sucessos': sum(1 for l in linhas if '[INFO' in l),
+            'etapas_registradas': sorted(list(set([
+                l.split('] [')[1].split(']')[0] 
+                for l in linhas 
+                if '] [' in l
+            ]))),
+        }
+        
+        return jsonify({
+            'sucesso': True,
+            'resumo': resumo,
+            'log_completo': conteudo_log,
+            'urls_uteis': {
+                'visualizar_html': '/steam/audit-log?format=html',
+                'download_txt': '/steam/audit-log?download=1',
+                'json': '/steam/audit-log'
+            }
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'sucesso': False,
+            'erro': str(e),
+            'dica': 'Nenhum log foi gerado ainda. Execute uma importação de Steam primeiro.'
+        }), 404
+
+
+@app.route('/steam/audit-limpar', methods=['POST'])
+def steam_audit_limpar():
+    """Limpa o arquivo de audit log (requer autenticação)"""
+    meu_email = session.get('user_email')
+    if not meu_email:
+        return jsonify({'erro': 'Não autenticado'}), 401
+    
+    try:
+        limpar_log_audit()
+        return jsonify({
+            'sucesso': True,
+            'mensagem': 'Log de auditoria foi limpo com sucesso'
+        })
+    except Exception as e:
+        return jsonify({
+            'sucesso': False,
+            'erro': str(e)
+        }), 500
 
 @app.route('/discord/abrir')
 def abrir_discord():
@@ -4018,6 +4451,58 @@ def restaurar_post(post_id):
         post.visivel = True
         flash("Post restaurado!", "success")
     return redirect(url_for('painel_moderacao_posts'))
+
+@app.route('/boss/usuarios')
+def gerenciar_usuarios():
+    if not session.get('is_admin'):
+        return redirect(url_for('dashboard'))
+
+    usuarios_lista = []
+    for usuario in USUARIOS_DB.values():
+        usuarios_lista.append({
+            'email': usuario.email,
+            'nome': usuario.nome or 'Sem nome',
+            'nickname': (usuario.email or '').split('@', 1)[0],
+            'avatar_url': getattr(usuario, 'foto_perfil', '') or '',
+            'data_cadastro': getattr(usuario, 'data_cadastro', None) or 'Sem data',
+            'amigos_count': len(GerenciadorAmigos.obter_amigos(usuario.email)),
+            'jogos_count': len(GerenciadorBiblioteca.obter_biblioteca(usuario.email)),
+            'status': usuario.obter_status_geral() if hasattr(usuario, 'obter_status_geral') else 'Offline',
+            'is_admin': isinstance(usuario, Admin),
+        })
+
+    usuarios_lista.sort(key=lambda item: item['nome'].lower())
+    return render_template('gerenciar_usuarios.html', usuarios=usuarios_lista, session_email=session.get('user_email'))
+
+
+@app.route('/boss/usuarios/<path:email>/excluir', methods=['POST'])
+def excluir_usuario(email):
+    if not session.get('is_admin'):
+        return redirect(url_for('dashboard'))
+
+    email_normalizado = _normalizar_email(email)
+    if not email_normalizado:
+        flash('Usuário inválido.', 'danger')
+        return redirect(url_for('gerenciar_usuarios'))
+
+    if email_normalizado == _normalizar_email(session.get('user_email')):
+        flash('Não é possível excluir sua própria conta.', 'warning')
+        return redirect(url_for('gerenciar_usuarios'))
+
+    usuario_alvo = USUARIOS_DB.get(email_normalizado)
+    if not usuario_alvo:
+        flash('Usuário não encontrado.', 'danger')
+        return redirect(url_for('gerenciar_usuarios'))
+
+    try:
+        excluir_usuario_completo(email_normalizado)
+        _remover_registros_relacionados_usuario(email_normalizado)
+        flash('Usuário excluído com sucesso.', 'success')
+    except Exception as exc:
+        flash(f'Não foi possível excluir o usuário: {exc}', 'danger')
+
+    return redirect(url_for('gerenciar_usuarios'))
+
 
 @app.route('/logout')
 def logout():

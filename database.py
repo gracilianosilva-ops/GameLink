@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
     hydra_current_game TEXT,
     hydra_last_update TEXT,
     foto_perfil TEXT,
+    data_cadastro TEXT,
     is_admin INTEGER NOT NULL DEFAULT 0
 );
 
@@ -184,6 +185,7 @@ def _ensure_usuario_columns(conn):
         ('hydra_current_game', 'TEXT'),
         ('hydra_last_update', 'TEXT'),
         ('foto_perfil', 'TEXT'),
+        ('data_cadastro', 'TEXT'),
     ]
 
     for column_name, column_type in columns_to_add:
@@ -297,6 +299,9 @@ def carregar_estado_persistido():
         usuario.hydra_pin = row['hydra_pin'] or ''
         usuario.hydra_token = row['hydra_token'] or ''
         usuario.foto_perfil = row['foto_perfil'] or ''
+        usuario.data_cadastro = row['data_cadastro'] or None
+        if not usuario.data_cadastro:
+            usuario.data_cadastro = datetime.now().isoformat(timespec='seconds')
         USUARIOS_DB[usuario.email.lower()] = usuario
 
     cursor.execute('SELECT * FROM categorias ORDER BY id ASC')
@@ -397,54 +402,79 @@ def carregar_estado_persistido():
 
 def persistir_usuario(user):
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        '''
-        INSERT INTO usuarios (
-            id, nome, email, password, token_recuperacao, idade, gosto_jogos, telefone,
-            steam_id64, steam_api_key, hydra_account_email, hydra_usuario, hydra_pin, hydra_token, hydra_current_game, hydra_last_update, foto_perfil, is_admin
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(email) DO UPDATE SET
-            nome=excluded.nome,
-            password=excluded.password,
-            token_recuperacao=excluded.token_recuperacao,
-            idade=excluded.idade,
-            gosto_jogos=excluded.gosto_jogos,
-            telefone=excluded.telefone,
-            steam_id64=excluded.steam_id64,
-            steam_api_key=excluded.steam_api_key,
-            hydra_account_email=excluded.hydra_account_email,
-            hydra_usuario=excluded.hydra_usuario,
-            hydra_pin=excluded.hydra_pin,
-            hydra_token=excluded.hydra_token,
-            hydra_current_game=excluded.hydra_current_game,
-            hydra_last_update=excluded.hydra_last_update,
-            foto_perfil=excluded.foto_perfil,
-            is_admin=excluded.is_admin
-        ''',
-        (
-            user.id,
-            user.nome,
-            user.email,
-            user._Usuario__password if hasattr(user, '_Usuario__password') else '',
-            getattr(user, 'token_recuperacao', None),
-            getattr(user, 'idade', None),
-            getattr(user, 'gosto_jogos', ''),
-            getattr(user, 'telefone', ''),
-            getattr(user, 'steam_id64', ''),
-            getattr(user, 'steam_api_key', ''),
-            getattr(user, 'hydra_account_email', ''),
-            getattr(user, 'hydra_usuario', ''),
-            getattr(user, 'hydra_pin', ''),
-            getattr(user, 'hydra_token', ''),
-            getattr(user, 'hydra_current_game', ''),
-            getattr(user, 'hydra_last_update', None),
-            getattr(user, 'foto_perfil', ''),
-            1 if user.__class__.__name__ == 'Admin' else 0,
+    try:
+        _ensure_usuario_columns(conn)
+        cursor = conn.cursor()
+        cursor.execute('PRAGMA table_info(usuarios)')
+        colunas = {row[1] for row in cursor.fetchall()}
+
+        campos_insert = ['nome', 'email', 'password']
+        valores_insert = [user.nome, user.email, user._Usuario__password if hasattr(user, '_Usuario__password') else '']
+
+        if 'token_recuperacao' in colunas:
+            campos_insert.append('token_recuperacao')
+            valores_insert.append(getattr(user, 'token_recuperacao', None))
+        if 'idade' in colunas:
+            campos_insert.append('idade')
+            valores_insert.append(getattr(user, 'idade', None))
+        if 'gosto_jogos' in colunas:
+            campos_insert.append('gosto_jogos')
+            valores_insert.append(getattr(user, 'gosto_jogos', ''))
+        if 'telefone' in colunas:
+            campos_insert.append('telefone')
+            valores_insert.append(getattr(user, 'telefone', ''))
+        if 'steam_id64' in colunas:
+            campos_insert.append('steam_id64')
+            valores_insert.append(getattr(user, 'steam_id64', ''))
+        if 'steam_api_key' in colunas:
+            campos_insert.append('steam_api_key')
+            valores_insert.append(getattr(user, 'steam_api_key', ''))
+        if 'hydra_account_email' in colunas:
+            campos_insert.append('hydra_account_email')
+            valores_insert.append(getattr(user, 'hydra_account_email', ''))
+        if 'hydra_usuario' in colunas:
+            campos_insert.append('hydra_usuario')
+            valores_insert.append(getattr(user, 'hydra_usuario', ''))
+        if 'hydra_pin' in colunas:
+            campos_insert.append('hydra_pin')
+            valores_insert.append(getattr(user, 'hydra_pin', ''))
+        if 'hydra_token' in colunas:
+            campos_insert.append('hydra_token')
+            valores_insert.append(getattr(user, 'hydra_token', ''))
+        if 'hydra_current_game' in colunas:
+            campos_insert.append('hydra_current_game')
+            valores_insert.append(getattr(user, 'hydra_current_game', ''))
+        if 'hydra_last_update' in colunas:
+            campos_insert.append('hydra_last_update')
+            valores_insert.append(getattr(user, 'hydra_last_update', None))
+        if 'foto_perfil' in colunas:
+            campos_insert.append('foto_perfil')
+            valores_insert.append(getattr(user, 'foto_perfil', ''))
+        if 'data_cadastro' in colunas:
+            campos_insert.append('data_cadastro')
+            valores_insert.append(_dt_to_db(getattr(user, 'data_cadastro', None)))
+        if 'is_admin' in colunas:
+            campos_insert.append('is_admin')
+            valores_insert.append(1 if user.__class__.__name__ == 'Admin' else 0)
+
+        placeholders = ', '.join('?' for _ in campos_insert)
+        upsert_columns = []
+        for campo in campos_insert:
+            if campo == 'email':
+                continue
+            upsert_columns.append(f'{campo}=excluded.{campo}')
+
+        cursor.execute(
+            f'''
+            INSERT INTO usuarios ({', '.join(campos_insert)})
+            VALUES ({placeholders})
+            ON CONFLICT(email) DO UPDATE SET {', '.join(upsert_columns)}
+            ''',
+            valores_insert,
         )
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def persistir_categoria(categoria):
@@ -482,6 +512,40 @@ def remover_jogo(jogo_id: int):
     conn.execute('DELETE FROM jogos WHERE id = ?', (jogo_id,))
     conn.commit()
     conn.close()
+
+
+def excluir_usuario_completo(email: str):
+    email = (email or '').strip().lower()
+    if not email:
+        raise ValueError('Email do usuário é obrigatório')
+
+    conn = get_connection()
+    try:
+        conn.execute('BEGIN')
+        foto_relativa = None
+        usuario_row = conn.execute('SELECT foto_perfil FROM usuarios WHERE lower(email) = ?', (email,)).fetchone()
+        if usuario_row:
+            foto_relativa = usuario_row['foto_perfil'] or ''
+
+        conn.execute('DELETE FROM usuarios WHERE lower(email) = ?', (email,))
+        conn.commit()
+
+        if foto_relativa:
+            if foto_relativa.startswith('/static/uploads/'):
+                nome_arquivo = foto_relativa.split('/static/uploads/', 1)[1]
+                caminho_arquivo = os.path.join(BASE_DIR, 'static', 'uploads', nome_arquivo)
+                if os.path.exists(caminho_arquivo):
+                    os.remove(caminho_arquivo)
+            elif foto_relativa.startswith('static/uploads/'):
+                caminho_arquivo = os.path.join(BASE_DIR, foto_relativa)
+                if os.path.exists(caminho_arquivo):
+                    os.remove(caminho_arquivo)
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def persistir_post(post):

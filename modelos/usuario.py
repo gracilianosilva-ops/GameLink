@@ -1,3 +1,4 @@
+from datetime import datetime
 from modelos.base import EntidadeBase
 from excecao import AutenticacaoError
 
@@ -27,6 +28,7 @@ class Usuario(EntidadeBase):
         self.steam_current_game_appid = None
         self.steam_playtime_minutes = 0
         self.steam_last_update = None
+        self.data_cadastro = datetime.now().isoformat(timespec='seconds')
         self.hydra_profile_id = ""
         self.hydra_api_base_url = ""
         self.hydra_account_email = ""
