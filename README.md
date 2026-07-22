@@ -229,10 +229,7 @@ O GAME-LINK foi desenvolvido para:
 
 Este projeto foi idealizado e desenvolvido por:
 
-- **Graciliano Alves**
-- **Robert Vinicius**
-
----
+- **Graciliano Alves**---
 
 ## 🤝 Colaboração
 
